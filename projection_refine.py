@@ -39,6 +39,9 @@ class tomo_align:
       win = signal.tukeywin(width_sinogram,0.2)
       win = signal.tukeywin(Nlayers,0.2)*win
 
+      #ASTRA needs the reconstruction to be dividable by 32 othewise there
+      #will be artefacts in left corner  (Line: 321)
+
       # Main Loop
       for ii in tqdm(self.max_iter):
         print('Iteration %d/%d'.format(ii, self.max_iter) )
@@ -56,7 +59,7 @@ class tomo_align:
         #step 3: get reprojections from current tomogram (using ASTRA) (Line 455)
         #self.sinogram_model = 
 
-        #step 4: calculate updated shifts from sinogram and sinogram_model (Line 494)
+        #step 4: calculate updated shifts from sinogram and sinogram_model (Line 494 & 884)
         #self.shift_upd = find_optimal_shift(self.sinogram_model, sinogram)
         #step 4.5: add momentum acceleration to improve convergence
         #optional step: add smoothing to shifts to prevent trapping at the local solutions

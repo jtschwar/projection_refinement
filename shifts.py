@@ -1,6 +1,6 @@
-import matplotlib.pyplot as plt
 from scipy.signal import convolve
 from numpy.fft import fft2, ifft2, fftshift, ifftshift
+import scipy.io as sio
 import numpy as np
 import FFTW
 
@@ -57,8 +57,6 @@ class shifts:
 
 			outShape = np.array([int(np.ceil(Np[0]/downsample/2)*2), int(np.ceil(Np[1]/downsample/2)*2)])
 			img = self.interpolateFT_centered(self.smooth_edges(img, 2*downsample), outShape, interp_sign)
-
-		import pdb; pdb.set_trace()
 
 		if real_img:
 			img = np.real(img)
@@ -135,26 +133,26 @@ class shifts:
 			real_img = np.all(np.isreal(img))
 
 			if apply_fft:
-				img = fft2(img)
+				img = fft2(img,axes=(0,1))
 
 			# Shift Along X-Direction
 			arrayMin = -np.floor(Np[1]/2)
 			arrayMax = np.ceil(Np[1]/2)
-			xGrid = ifftshift(np.arange(arrayMin-1,arrayMax-1))/Np[1]
+			xGrid = ifftshift(np.arange(arrayMin,arrayMax))/Np[1]
 
 			# Output shape : 1 x ny x nz 
 			if np.isscalar(xShifts):
 				X = (xGrid.reshape(Np[1],1) * xShifts).reshape(1,Np[1],1)
 			else:
 				X = (xGrid.reshape(Np[1],1) @ xShifts.reshape(1,Np[2])).reshape(1,Np[1],Np[2])
-
 			X = np.exp((-2*(1j)*np.pi)*X)
+
 			img = img * X
 
 			# Shift Along Y-Direction
 			arrayMin = -np.floor(Np[0]/2)
 			arrayMax = np.ceil(Np[0]/2)
-			yGrid = ifftshift(np.arange(arrayMin-1,arrayMax-1))/Np[0]
+			yGrid = ifftshift(np.arange(arrayMin,arrayMax))/Np[0]
 
 			# Output shape : nx x 1 x nz 
 			if np.isscalar(yShifts):
@@ -162,10 +160,11 @@ class shifts:
 			else:
 				Y = (yGrid.reshape(Np[0],1) @ yShifts.reshape(1,Np[2])).reshape(Np[0],1,Np[2])
 			Y = np.exp((-2*(1j)*np.pi)*Y)
+
 			img = img * Y
 
 			if apply_fft:
-				img = ifft2(img)
+				img = ifft2(img,axes=(0,1))
 
 			if real_img:
 				img = np.real(img)
@@ -192,11 +191,12 @@ class shifts:
 		scale = np.prod(Np_new - 2) / np.prod(Np[:2])
 		downsample = int(np.ceil( np.sqrt(1/scale) ))
 
-		# Apply Padding to Account for Boundary Issues
-		img = np.pad(img, (downsample,downsample), 'symmetric')
+		# Apply Padding in X/Y to Account for Boundary Issues
+		padShape = ((downsample,downsample),(downsample,downsample),(0,0))
+		img = np.pad(img, padShape, 'symmetric')
 
 		# Go to the fourier space
-		img = fft2(img)
+		img = fft2(img,axes=(0,1))
 
 		# Apply +/- 0.5 px Shift
 		img = self.imshift_fft(img, interp_sign*-0.5, interp_sign*-0.5, False)
@@ -204,13 +204,11 @@ class shifts:
 		# Crop in Fourier Space
 		img = self.ifftshift_2D(self.crop_pad(self.fftshift_2D(img), Np_new))
 
-		# import pdb; pdb.set_trace()
-
 		# Apply +/- 0.5 px Shift in Cropped Space
 		img = self.imshift_fft(img, interp_sign*-0.5, interp_sign*-0.5, False)
 
 		# Return to the Real Space
-		img = ifft2(img)
+		img = ifft2(img,axes=(0,1))
 
 		# Scale to keep the average constant
 		img = img * scale
@@ -321,7 +319,6 @@ class shifts:
 		ker /= np.sum(ker)
 
 		return ker
-
 
 ## --------------------------------------------------------------------------------------------------------
 

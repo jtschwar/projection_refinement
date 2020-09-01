@@ -1,5 +1,5 @@
 from scipy.signal import convolve
-from numpy.fft import fft2, ifft2, fftshift, ifftshift
+from numpy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
 import scipy.io as sio
 import numpy as np
 import FFTW
@@ -56,7 +56,7 @@ class shifts:
 			img = img / self.imgaussfilt3_conv(np.ones([Np[0],Np[1],1]), [downsample, downsample, 0])
 
 			outShape = np.array([int(np.ceil(Np[0]/downsample/2)*2), int(np.ceil(Np[1]/downsample/2)*2)])
-			img = self.interpolateFT_centered(self.smooth_edges(img, 2*downsample), outShape, interp_sign)
+			img = self.interpolateFT_centered(self.smooth_edges(img, 2*downsample, -1), outShape, interp_sign)
 
 		if real_img:
 			img = np.real(img)
@@ -66,13 +66,23 @@ class shifts:
 ## --------------------------------------------------------------------------------------------------------
 
 	## Take stake of 2D images and smooths boundaries to avoid sharp edge artifacts during imshift_fft
-	def smooth_edges(self, img, win_size):
-	
+	def smooth_edges(self, img, win_size, dims):
+		#   Inputs:
+	    #       **img - 2D stacked array, smoothing is done along first two dimensions 
+	    #       **win_size - size of the smoothing region, default is 3 
+	    #       **dims - list of dimensions along which will by smoothing done 
+	    #   Outputs: 
+		#       ++img - smoothed array 
 
-		dims = np.array([0,1],dtype=np.int)
+		if dims == -1:
+			dims = np.array([0,1], dtype=np.int) # smooth along first 2 dimensions
+		else:
+			dims = np.array([dims],dtype=np.int)
+
 		Npix = img.shape
 		
 		for ii in dims:
+
 			win_size = max(win_size,3)
 
 			# Get indidces of edge regions
@@ -86,8 +96,12 @@ class shifts:
 				img_temp = img[:,ind,:]
 
 			kernel = self.gausswin(win_size,2.5)
-			kernel = kernel.reshape(win_size,1,1)
-			
+
+			if ii == 0:
+				kernel = kernel.reshape(win_size,1,1)		
+			else:
+				kernel = kernel.reshape(1,win_size,1)
+
 			# smooth across the image edges
 			img_tmp = convolve(img_temp, kernel,mode='same')
 			
@@ -99,7 +113,7 @@ class shifts:
 			img_tmp = img_tmp / convolve(np.ones(boundary_shape),kernel,mode='same')
 
 			if ii == 0:
-				img[ind,] = img_tmp
+				img[ind,:,:] = img_tmp
 			else:
 				img[:,ind,:] = img_tmp
 
@@ -196,7 +210,7 @@ class shifts:
 		img = np.pad(img, padShape, 'symmetric')
 
 		# Go to the fourier space
-		img = fft2(img,axes=(0,1))
+		img = fft2(img,axes=(1,0))
 
 		# Apply +/- 0.5 px Shift
 		img = self.imshift_fft(img, interp_sign*-0.5, interp_sign*-0.5, False)
@@ -328,3 +342,113 @@ class shifts:
 		n = np.arange(L) - N/2
 		return np.exp(-0.5*(a*n/(N/2))**2)
 
+## --------------------------------------------------------------------------------------------------------
+
+	# Apply Accurate Affine Deformation on image 
+	def imdeform_affine_fft(self, img, affine_matrix, shift):
+		# Inputs:  
+		#     **img             - 2D or stack of 2D images 
+		#     **affine_matrix   - 2x2xN affine matrix 
+		#     **shift           - Nx2 vector of shifts to be applied 
+		# *returns*: 
+		#     ++img             - deformed image 
+
+		if np.all(shifts != 0):
+			img = self.imshift_fft(img, shift[:,0], shift[:,1], True)
+
+		scale = affine_matrix[0,:]
+		asymmetry = affine_matrix[1,:]
+		rotation = affine_matrix[2,:]
+
+		# Apply rescaling if non-square pixel sizes. 
+		# if np.any(np.abs(scale[:]-1) > 1e-5):
+		# 	img = self.imrescale_frft(img,scale)
+
+		# Apply shear transformation
+		# if np.any(np.abs(shear[:]) > 1e-5):
+		# 	img = self.imshear_fft(img,shear,1)
+
+		# Apply rotation 
+		if np.any(abs(rotation[:])> 1e-5):
+			img = self.imrotate_ax_fft(img,rotation,3)
+
+		return img
+
+
+## --------------------------------------------------------------------------------------------------------
+
+	# FFT-based image rotation for a stack of images along given axis
+	# for the accurate rotation of sampled images (Optic Communications, 1997)
+	def imrotate_ax_fft(self, img, theta, axis):
+		# Inputs: 
+		#   **img       - stacked array of images to be rotated 
+		#   **theta     - rotation angle 
+		# *optional*
+		#   **axis      - rotation axis (default=3)
+		# returns:
+		#   ++img       - rotated image 
+
+		if np.all(theta == 0):
+			return
+
+		real_img = np.all(np.isreal(img))
+
+		# if axis == 1:
+		# 	img = permute(img, [3,2,1])
+		# 	theta = -theta 
+		# elif: axis == 2:
+		# 	img = permute(img, [1,3,2])
+
+		# angle_90_offset = np.round(theta/90)
+
+		# if angle_90_offset != 0:
+		# 	img = np.rot90(img,angle_90_offset)
+		# 	theta = theta - 90*angle_90_offset
+
+		if np.all(theta == 0):
+			return
+
+		(M,N,_) = img.shape
+
+		#Make possible to rotate each slice with different angle
+		Nangles = theta.shape[0]
+		theta = theta.reshape(1,1,Nangles)
+		xgrid = ifftshift( np.arange(-np.floor(M/2),np.ceil(M/2) ) /M )
+		ygrid = ifftshift( np.arange(-np.floor(N/2),np.ceil(N/2) ) /N )
+
+		# the 0.5px offset is important to make the rotation equivalent ot matlab imrotate
+		Mgrid = np.arange(M) - np.floor(M/2) + 0.5 
+		Ngrid = np.arange(N) - np.floor(N/2) + 0.5
+
+		Mgrid = Mgrid.reshape(M, 1, 1)
+		Ngrid = Ngrid.reshape(1, N, 1)
+
+		(M1, M2) = self.aux_fun(theta, xgrid, ygrid, Mgrid, Ngrid)
+
+		img = ifft( fft(img, axis=1) * M1, axis=1 )
+		img = ifft( fft(img, axis=0) * M2, axis=0 )
+		img = ifft( fft(img, axis=1) * M1, axis=1 )
+
+		if real_img:
+			img = np.real(img)
+
+		# if axis == 1:
+		# 	img = permute(img, [3,2,1])
+		# elif: axis == 2:
+		# 	img = permute(img, [1,3,2])
+
+		return img
+
+
+	# Auxiliarly function to be used for GPU kernel merging
+	def aux_fun(self, theta, xgrid, ygrid, Mgrid, Ngrid):
+
+		Nx = - np.sin(np.deg2rad(theta)) * xgrid.reshape(xgrid.shape[0],1,1)
+		Ny = np.tan(np.deg2rad(theta/2)) * ygrid.reshape(1,ygrid.shape[0],1)
+
+		M1 = np.exp( (-2*(1j)*np.pi) * Mgrid * Ny )
+		M2 = np.exp( (-2*(1j)*np.pi) * Ngrid * Nx )
+
+		return (M1, M2)
+
+		

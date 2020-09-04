@@ -374,6 +374,31 @@ class shifts:
 
 		return img
 
+## --------------------------------------------------------------------------------------------------------
+
+	# Apply shift that can be different for each frame
+	# 	+ Compared to imshift_fft it does not have periodic boundary
+	#   + it is based on linear interpolation, integer shift is equivalent to imshift_fft (up to boundary conditions)
+	def imshift_linear(self, img, shift, method):
+		from scipy import interpolate
+
+		# Inputs: 
+		#   **img       - input image / stack of images
+		#   **shift 	- applied shift or vector of shifts for eachfram
+		#   **method 	- choose interpolation method: {linear}, cubic
+		#
+		# returns:
+		#   ++img       - shifted image / stack of images
+
+		isReal = np.all(np.isreal(img))
+
+		(Nx, Ny, Nlayers) = img.shape
+
+		for ii in range(Nlayers):
+			img[:,:,ii] = interpolate.interp2d(img[:,:,ii], -x[ii] + np.arange(Ny), -y[ii] + np.arange(Nx), kind=method)
+
+		return img
+
 
 ## --------------------------------------------------------------------------------------------------------
 

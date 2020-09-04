@@ -4,17 +4,15 @@ import shifts
 
 class refinements:
 
-    def __init__(self,inPar,inGeom):
-        self.tomo_obj = None
+    def __init__(self,inPar):
         self.par = inPar
-        self.geom = inGeom
         
 ## --------------------------------------------------------------------------------------------------------
 
     def refine_geometry(self, sinogram_measured, sino_model, angles, iter, Npix, Nlayers, width_sinogram, Nangles):
 
         if iter == 0:
-            geometry_corr = np.array([np.mean(self.par['lamino_angle']), np.mean(self.geom['tilt_angle']), np.mean(self.geom['skewness_angle']), np.mean(self.geom['asymmetry'])])
+            geometry_corr = np.array([np.mean(self.par['lamino_angle']), np.mean(geom['tilt_angle']), np.mean(geom['skewness_angle']), np.mean(geom['asymmetry'])])
  
         resid_sino = self.get_resid_sino(sino_model,sinogram_measured, self.par['high_pass_filter'])
 
@@ -25,9 +23,9 @@ class refinements:
         Dvec = dX * np.linspace(-1,1,dX.shape[0]).reshape(dX.shape[0],1,1) - dY * np.linspace(-1,1,dY.shape[1]).reshape(1,dX.shape[1],1)
         
         optimal_shift = self.get_GD_update(Dvec, resid_sino, self.par['high_pass_filter'])
-        self.geom['tilt_angle'] = self.geom['tilt_angle'] + step_relation * np.rad2deg(optimal_shift)
+        geom['tilt_angle'] = geom['tilt_angle'] + step_relation * np.rad2deg(optimal_shift)
 
-        return self.geom
+        return geom
 
 ## --------------------------------------------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 from scipy import signal
 from tqdm import tqdm
 import astra_ctvlib
+import refinements
 import numpy as np
 import shifts
 
@@ -22,11 +23,8 @@ class tomo_align:
 		self.sinogram = linearShifts.imshift_generic(self.sinogram, optimal_shift, 5, binFactor, 'fft', interp_sign)
 
 		# Shift also the weights to correspond to the sinogram
-		wieghts = np.ones(self.sinogram.shape)
-		weights = linearShifts.imshift_generic(weights, optimal_shift, Np_sinogram, 0, binFactor, 'linear', 0)
-
-		# Sort by angle if Requested, but only after binning to make it faster (Line: 247)
-
+		# weights = np.ones(self.sinogram.shape)
+		# weights = linearShifts.imshift_generic(weights, optimal_shift, Np_sinogram, 0, binFactor, 'linear', 0)
 
 		# Prepare some Auxiliary Variables
 		(Nlayers,width_sinogram) = self.sinogram.shape[:1]
@@ -46,27 +44,25 @@ class tomo_align:
 		tomo_obj.initializeFBP(parms['filter_type'])
 
 		# geometry parameters structure 
-		geom = {'tilt_angle':0, 'skewness_angle':0, 'asymmetry':0}
-
-		#ASTRA needs the reconstruction to be dividable by 32 othewise there
-		#will be artefacts in left corner  (Line: 321)
-		Npix = np.ceil(Npix/binFactor)
+		geom = {'tilt_angle':0, 'skewness_angle':0}
 
 		# Class for Calculating Projection Refinements
-		calcRefine = refinements.refinements(par)
+		calcRefine = refinements.refinements(params)
 
 		# Main Loop
 		for ii in tqdm(params['max_iter']):
 
 			#step 1: shift (downsampled) sinogram (Line: 371) 
 			sinogram_shifted = self.sinogram
-			weights_shifted = weights
-			geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles))*geom['asymmetry'], np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])
+			# weights_shifted = weights
+
+			# geom_mat = [scale, rotation, shear]
+			geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])
 			sinogram_shifted = linearShifts.imdeform_affine_fft(sinogram_shifted, geom_mat , shift_total)
 
 			# Shift Weights (Lines: 376 & 379)
-			weights_shifted = linearShifts.imshift_linear(weights_shifted, shift_total, 'linear', tomo_obj)
-			weights_shifted = np.maximum(0, weights_shifted * win)
+			# weights_shifted = linearShifts.imshift_linear(weights_shifted, shift_total, 'linear', tomo_obj)
+			# weights_shifted = np.maximum(0, weights_shifted * win)
 
 			if ii == 0:
 				mass = np.mean(np.abs(sinogram_shifted))
@@ -86,13 +82,14 @@ class tomo_align:
 
 			#step 3: get reprojections from current tomogram (using ASTRA) (Line 455)
 			tomo_obj.forwardProjection()
-			sinogram_model = tomo_obj.get_model_projections()
+			sinogram_model = tomo_obj.get_model_projections().reshape(Nlayers, width_sinogram, Nangles)
 
-			# Refine Geometry (ie tilt_angle) (Line 482)
-			geom = calcRefine.refine_geometry(rec, sinogram_shifted, sinogram_model, self.angles, par, geom)
+			# Refine Geometry (ie tilt_angle & shear) (Line 482)
+			if params['refine_geometry']:
+				geom = calcRefine.refine_geometry(sinogram_shifted, sinogram_model, geom, ii)
 
 			#step 4: calculate updated shifts from sinogram and sinogram_model (Line 494 & 884)
-			(shift_upd, err) = calcRefine.find_optimal_shift(self.sinogram_model, sinogram, mass, params)
+			(shift_upd, err) = calcRefine.find_optimal_shift(sinogram_model, self.sinogram, mass)
 
 			# Do not allow more than 0.5px per iteration (Line 502)
 			shift_upd = np.minimum(0.5, np.abs(shift_upd)) * np.sign(shift_upd) * params['step_relaxation']
@@ -119,8 +116,22 @@ class tomo_align:
 			#step 5: update shifts
 			shift_total += shift_upd
 
+			# Enforce smoothness of the estimate position update -> in each iteration 
+			# smooth the accumlated position udate, this helps against discontinuites 
+			# in the update (Line: 558)
+			if params['position_update_smoothing']:
+				for kk in range(2):
+					shift_total[:,kk] = smooth(shift_total(:,kk), max(0, min(1, par.position_update_smoothing)) * Nangles); 
+
+			# Check for Maximal Update
+
+			# # Plot results (Line 572)
+			# if params['plot_results']:
+			# 	plot_alignment(rec, sinogram_shifted, err, shift_upd, shift_total, angles, par)
+
 		# Prepare outputs to be returned
-		params['tilt_angle'] = geom['tilt_angle']
+		params['tilt_angle']     = geom['tilt_angle']
+		params['skewness_angle'] = geom['skewness_angle']
 
 		optimal_shift += shifts * binFactor
 

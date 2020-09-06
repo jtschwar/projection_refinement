@@ -357,16 +357,16 @@ class shifts:
 			img = self.imshift_fft(img, shift[:,0], shift[:,1], True)
 
 		scale = affine_matrix[0,:]
-		asymmetry = affine_matrix[1,:]
-		rotation = affine_matrix[2,:]
+		rotation = affine_matrix[1,:]
+		shear = affine_matrix[2,:]
 
 		# Apply rescaling if non-square pixel sizes. 
 		# if np.any(np.abs(scale[:]-1) > 1e-5):
 		# 	img = self.imrescale_frft(img,scale)
 
 		# Apply shear transformation
-		# if np.any(np.abs(shear[:]) > 1e-5):
-		# 	img = self.imshear_fft(img,shear,1)
+		if np.any(np.abs(shear[:]) > 1e-5):
+			img = self.imshear_fft(img,shear,1)
 
 		# Apply rotation 
 		if np.any(abs(rotation[:])> 1e-5):

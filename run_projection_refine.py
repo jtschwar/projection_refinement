@@ -18,15 +18,17 @@ Nlayers = np.int(object_ROI[1] - object_ROI[0])
 
 theta = sio.loadmat('theta.mat')
 theta = theta['theta']
-Nangles = angles.shape[0]
+Nangles = theta.shape[0]
 
 shift = np.zeros([sinogram.shape[2],2])
 
 ######################################################################
 # Useful Tuning Parameters
 
-params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filter':0.01, 'step_relaxation':0.5, 'filter_type':'ram-lak', 'lamino_angle':90}
-params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':True, 'ROI':object_ROI})
+params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filter':0.01, 'step_relaxation':0.5}
+params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':False})
+params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoothing':True, 'ROI':object_ROI})
+params.update({'plot_results':False})
 
 max_binning = 2**(np.ceil(np.log2(np.max(Npix))-np.log2(100)))
 binning = 2**(np.arange(max_binning-1)[::-1])
@@ -40,6 +42,7 @@ tomoAlign = projection_refine.tomo_align(sinogram, theta)
 
 # par = {'filter_pos':Nangles/4, 'filter_data':0.01, 'max_iter':10, 'precision': 0.1, 'binning':binning[-1]} 
 
+## Implement Tomviz XCorr Method instead
 # (sinogram, xcor_shift) = tomoAlign.align_tomo_Xcorr(sinogram, theta, par)
 
 ######################################################################

@@ -58,6 +58,7 @@ for jj in range(len(binning)):
     # Self Consisency based alignment procedure based on ASTRA toolbox
     (shift, err) = tomoAlign.tomo_consistency_linear(shift, params)
     tomoAlign.sinogram = sinogram
+    tomoAlign.angles = theta
 
     # Plotting
-    # TODO 
+    # TODO ??

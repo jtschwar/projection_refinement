@@ -25,7 +25,6 @@ class tomo_align:
 		binFactor = params['binning']
 		Nangles = self.angles.shape[0]
 		print('[align] : Shifting Sinograms and binning = ' + str(binFactor))
-		print(self.sinogram.shape)
 
 		# Shift to the Last Optimal Position + Remove Edge Issues (Line: 235) + Downsample data
 		linearShifts = shifts.shifts()
@@ -46,8 +45,6 @@ class tomo_align:
 
 		# Prepare some Auxiliary Variables
 		(Nlayers,width_sinogram) = self.sinogram.shape[:2]
-
-		print('Nlayers: ' + str(Nlayers))
 
 		# win = signal.tukeywin(width_sinogram,0.2)
 		# if Nlayers > 10:

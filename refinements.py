@@ -6,6 +6,8 @@ class refinements:
 
     def __init__(self,inPar):
         self.par = inPar
+        self.FFTW_full = None
+        self.FFTW_downsample = None
         
 ## --------------------------------------------------------------------------------------------------------
 
@@ -87,7 +89,6 @@ class refinements:
 
         # Align Horizontal
         dX = self.get_img_grad_filtered(sinogram_model, 0, self.par['high_pass_filter'], 5)
-
         dX = self.imfilter_high_pass_1d(dX, 1, self.par['high_pass_filter'], True)
         shift_x = - np.sum(dX * resid_sino, axis=(0,1)) / np.sum(dX**2, axis=(0,1))
 

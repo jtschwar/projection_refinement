@@ -60,5 +60,4 @@ for jj in range(len(binning)):
     tomoAlign.sinogram = sinogram
     tomoAlign.angles = theta
 
-    # Plotting
-    # TODO ??
+print('Alignment Finished')

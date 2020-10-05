@@ -7,6 +7,7 @@ import refinements
 import numpy as np
 import shifts
 import time
+import FFTW
 
 class tomo_align:
 
@@ -60,9 +61,6 @@ class tomo_align:
 		b = np.zeros([Nlayers, width_sinogram*Nangles])
 		sinogram_model = np.zeros([Nlayers, width_sinogram, Nangles])
 
-		if params['plot_results']:
-			rec = np.zeros([Nlayers, width_sinogram, width_sinogram], dtype=np.float32)
-
 		tomo_obj = astra_ctvlib.astra_ctvlib(Nlayers,width_sinogram, Nangles, np.deg2rad(self.angles))
 		tomo_obj.initializeFBP(params['filter_type'])
 		tomo_obj.initializeFP()
@@ -103,7 +101,6 @@ class tomo_align:
 
 			#step 3: get reprojections from current tomogram (using ASTRA) (Line 455)
 			tomo_obj.forwardProjection()
-
 			tt = tomo_obj.get_model_projections()
 			for s in range(Nangles):
 				sinogram_model[:,:,s] = tt[:,s*width_sinogram:(s+1)*width_sinogram]
@@ -156,7 +153,6 @@ class tomo_align:
 
 			# Check for Maximal Update
 			max_update = np.max( np.quantile(np.abs(shift_upd), 0.995, axis=0) )
-			#print(max_update * binFactor)
 			if max_update * binFactor < params['min_step_size']:
 				print('Minimal Step Limit Reached')
 				break

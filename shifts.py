@@ -2,7 +2,6 @@ from scipy.signal import convolve
 from numpy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
 import scipy.io as sio
 import numpy as np
-import FFTW
 
 # These scripts are part of the cSAXS_toolbox
 
@@ -11,8 +10,10 @@ class shifts:
 	def __init__(self):
 		self.sinogram = None
 		self.shifts = None
-		self.FFTW_full = None
-		self.FFTW_downsample = None
+		self.1D_FFTW_full = None
+		self.2D_FFTW_full = None
+		self.1D_FFTW_downsample = None
+		self.2D_FFTW_downsample = None
 
 ## --------------------------------------------------------------------------------------------------------
 	

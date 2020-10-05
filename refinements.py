@@ -11,6 +11,9 @@ class refinements:
 
     def refine_geometry(self, sinogram_measured, sino_model, geom, iter):
 
+        # Debugger
+        # import pdb; pdb.set_trace()
+
         if iter == 0:
             geometry_corr = np.array([ np.mean(self.par['lamino_angle']), np.mean(geom['tilt_angle']), np.mean(geom['skewness_angle']) ])
  
@@ -25,9 +28,9 @@ class refinements:
         geom['tilt_angle'] = geom['tilt_angle'] + step_relation * np.rad2deg(optimal_shift)
 
         # get shear gradient
-        # Dvec = dY * np.linspace(-1,1,dY.shape[1]).reshape(1,dX.shape[1],1)
-        # optimal_shift = self.get_GD_update(Dvec, resid_sino, self.par['high_pass_filter'])
-        # geom['skewness_angle'] = geom['skewness_angle'] + step_relation * np.rad2deg(optimal_shift)
+        Dvec = dY * np.linspace(-1,1,dY.shape[1]).reshape(1,dX.shape[1],1)
+        optimal_shift = self.get_GD_update(Dvec, resid_sino, self.par['high_pass_filter'])
+        geom['skewness_angle'] = geom['skewness_angle'] + step_relation * np.rad2deg(optimal_shift)
 
         return geom
 
@@ -84,16 +87,17 @@ class refinements:
 
         # Align Horizontal
         dX = self.get_img_grad_filtered(sinogram_model, 0, self.par['high_pass_filter'], 5)
+
         dX = self.imfilter_high_pass_1d(dX, 1, self.par['high_pass_filter'], True)
         shift_x = - np.sum(dX * resid_sino, axis=(0,1)) / np.sum(dX**2, axis=(0,1))
 
         # Align Vertical
         dY = self.get_img_grad_filtered(sinogram_model, 1, self.par['high_pass_filter'], 5)
-        dY = self.imfilter_high_pass_1d(dY, 0, par['high_pass_filter'], True)
+        dY = self.imfilter_high_pass_1d(dY, 0, self.par['high_pass_filter'], True)
         shift_y = - np.sum(dY * resid_sino, axis=(0,1)) / np.sum(dY**2, axis=(0,1) )
-
-        shift = np.array([shift_x, shift_y])
-        err = np.sqrt(np.mean(resid_sino**2)) / mass
+        
+        shift = np.array([shift_x, shift_y]).T
+        err = np.sqrt(np.mean(resid_sino**2,axis=(0,1))) / mass
 
         return (shift, err)
 
@@ -197,3 +201,44 @@ class refinements:
             img = np.real(img)
 
         return img 
+
+## --------------------------------------------------------------------------------------------------------
+
+    # function for accelerated momentum gradient descent. 
+    # the function measured momentum of the subsequent updates and if the
+    # correlation between then is high, it will use this information to
+    # accelerate the update in the direction of average velocity 
+    def add_momentum(self, shifts_memory, velocity_map, acc_axes):
+        import scipy.optimize as optimize
+        
+        shift = shifts_memory[-1,:,:]
+
+        Nmem = shifts_memory.shape[0] - 1
+
+        # apply only for horizontal, vertical seems to be too unstable         
+        for jj in acc_axes:
+
+            if np.all(shift[:,jj] == 0):
+                continue
+
+            for ii in range(Nmem):
+                C[ii] = np.correlate(shift[:,jj], shifts_memory[ii,:,jj].T)
+
+            # estimate optimal friction from previous steps 
+            funOptimize = lambda z: np.norm( C - np.exp(-x * np.arange(Nmem, 1,- 1)))
+            decay = optimize.fmin( funOptimize, 0 )
+
+            ######################################
+            alpha = 2                                          # scaling of the friction , larger == less memory 
+            gain = 0.5                                         # smaller -> lower relative speed (less momentum)
+            friction = np.min( 1, np.max(0,alpha*decay) )    # smaller -> longer memory, more momentum 
+            ######################################
+
+            # update velocity map 
+            velocity_map[:,jj] = (1-friction) * velocity_map[:,jj] + shift[:,jj]
+            
+            # update shift estimates 
+            shift[:,jj] = (1-gain) * shift[:,jj]  + gain * velocity_map[:,jj]
+
+        return (shift, velocity_map)
+

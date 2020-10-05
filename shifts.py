@@ -11,13 +11,14 @@ class shifts:
 	def __init__(self):
 		self.sinogram = None
 		self.shifts = None
-		self.FFTW = None
+		self.FFTW_full = None
+		self.FFTW_downsample = None
 
 ## --------------------------------------------------------------------------------------------------------
 	
 	# Apply imshift_fft on provided image that was first upsampled to Npix (if needed) and 
 	# cropped to region ROI. After shifting, the image is downsampled.
-	def imshift_generic(self, img, shift, Npix, smooth, ROI, downsample, interp_sign):
+	def imshift_generic(self, img, shift, smooth, ROI, downsample, interp_sign):
 		## Inputs:
 		## **img            2D stacked image
 		## **shift          Nx2 vector of shifts applied on the image
@@ -36,7 +37,7 @@ class shifts:
 		# import pdb; pdb.set_trace()
 
 		if np.any(shift != 0):
-			smooth_axis = 3 - np.nonzero(np.any(shift != 0,axis=0))[0]
+			smooth_axis = np.nonzero(np.any(shift != 0,axis=0))[0]
 			img = self.smooth_edges(img, smooth, smooth_axis)
 			img = self.imshift_fft(img, shift[:,0], shift[:,1], True)
 
@@ -56,7 +57,7 @@ class shifts:
 			img = img / self.imgaussfilt3_conv(np.ones([Np[0],Np[1],1]), [downsample, downsample, 0])
 
 			outShape = np.array([int(np.ceil(Np[0]/downsample/2)*2), int(np.ceil(Np[1]/downsample/2)*2)])
-			img = self.interpolateFT_centered(self.smooth_edges(img, 2*downsample, -1), outShape, interp_sign)
+			img = self.interpolateFT_centered(self.smooth_edges(img, int(2*downsample), np.array([0,1],dtype=int)), outShape, interp_sign)
 
 		if real_img:
 			img = np.real(img)
@@ -74,10 +75,13 @@ class shifts:
 	    #   Outputs: 
 		#       ++img - smoothed array 
 
-		if dims == -1:
-			dims = np.array([0,1], dtype=np.int) # smooth along first 2 dimensions
-		else:
-			dims = np.array([dims],dtype=np.int)
+		if np.isscalar(dims):
+			dims = np.array([dims], dtype=int)
+
+		# if len(dims) == 1:
+		# 	dims = np.array([dims[0]],dtype=np.int)
+		# else:
+		# 	dims = np.array([0,1], dtype=np.int) # smooth along first 2 dimensions
 
 		Npix = img.shape
 		
@@ -86,7 +90,7 @@ class shifts:
 			win_size = max(win_size,3)
 
 			# Get indidces of edge regions
-			ind = np.concatenate([np.arange(Npix[ii]-win_size,Npix[ii]), np.arange(win_size)])
+			ind = np.concatenate([np.arange(Npix[ii]-win_size,Npix[ii],dtype=int), np.arange(win_size,dtype=int)])
 			ker_size = np.array([1,1])
 			ker_size[ii] = win_size
 
@@ -135,11 +139,11 @@ class shifts:
 
 		# Shift Only Along One Axis -> Faster (TODO)
 		if np.all(xShifts == 0):
-			print('Tbd: Shift Alone One Axis')
-			# img = imshift_fft_ax(img, y, 1)
+			print('Tbd: Shift Along One Axis')
+			# img = self.imshift_fft_ax(img, y, 1)
 		elif np.all(yShifts == 0):
-			print('Tbd: Shift Alone One Axis')
-			# img = imshift_fft_ax(img, x, 2)
+			print('Tbd: Shift Along One Axis')
+			# img = self.imshift_fft_ax(img, x, 2)
 
 		# 2D FFT Shifting
 		else:
@@ -206,7 +210,7 @@ class shifts:
 		downsample = int(np.ceil( np.sqrt(1/scale) ))
 
 		# Apply Padding in X/Y to Account for Boundary Issues
-		padShape = ((downsample,downsample),(downsample,downsample),(0,0))
+		padShape = ((downsample,downsample+1),(downsample,downsample+1),(0,0))
 		img = np.pad(img, padShape, 'symmetric')
 
 		# Go to the fourier space
@@ -353,7 +357,7 @@ class shifts:
 		# *returns*: 
 		#     ++img             - deformed image 
 
-		if np.all(shifts != 0):
+		if np.all(shift != 0):
 			img = self.imshift_fft(img, shift[:,0], shift[:,1], True)
 
 		scale = affine_matrix[0,:]
@@ -399,6 +403,30 @@ class shifts:
 
 		return img
 
+## --------------------------------------------------------------------------------------------------------
+
+	# Apply shift that can be different for each frame
+	# 	+ Compared to imshift_fft it does not have periodic boundary
+	#   + it is based on linear interpolation, integer shift is equivalent to imshift_fft (up to boundary conditions)
+	def interpolate_linear(self, img, shift, method):
+		from scipy import interpolate
+
+		# Inputs: 
+		#   **img       - input image / stack of images
+		#   **shift 	- applied shift or vector of shifts for eachfram
+		#   **method 	- choose interpolation method: {linear}, cubic
+		#
+		# returns:
+		#   ++img       - shifted image / stack of images
+
+		isReal = np.all(np.isreal(img))
+
+		(Nx, Ny, Nlayers) = img.shape
+
+		for ii in range(Nlayers):
+			img[:,:,ii] = interpolate.interp2d(img[:,:,ii], -x[ii] + np.arange(Ny), -y[ii] + np.arange(Nx), kind=method)
+
+		return img
 
 ## --------------------------------------------------------------------------------------------------------
 

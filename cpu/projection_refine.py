@@ -4,17 +4,17 @@ from scipy import signal
 from tqdm import tqdm
 import astra_ctvlib
 import refinements
+import pytvlib
 import numpy as np
 import shifts
 import time
-import FFTW
 
 class tomo_align:
 
-	def __init__(self, input_sino, input_angles, input_weights):
+	def __init__(self, input_sino, input_angles):
 		self.sinogram = input_sino
 		self.angles = input_angles
-		self.weights = input_weights
+		#self.weights = input_weights
 
 	def tomo_consistency_linear(self, optimal_shift, params):
 		print('[align] : Starting align_tomo_consistency_linear')
@@ -30,26 +30,19 @@ class tomo_align:
 		# Shift to the Last Optimal Position + Remove Edge Issues (Line: 235) + Downsample data
 		linearShifts = shifts.shifts()
 		self.sinogram = linearShifts.imshift_generic(self.sinogram, optimal_shift, 5, params['ROI'], binFactor, interp_sign)
-
-		# Shift also the weights to correspond to the sinogram
-		# self.weights = linearShifts.imshift_generic(self.weights, optimal_shift, 0, binFactor, 0)
+		print('Sinogram Shape: ' + str(self.sinogram.shape))
 
 		# Sort by angle if requested, but only after binning to make it faster
 		if params['showsorted']:
 			ang_order = np.argsort(self.angles)
 			self.sinogram = self.sinogram[:,:,ang_order]
 			self.angles = self.angles[ang_order]
-			optimal_shift = optimal_shift[ang_order]
+			optimal_shift = optimal_shift[ang_order,:]
 		else:
 			ang_order = np.arange(Nangles)
-		params['ang_order'] = ang_order
 
 		# Prepare some Auxiliary Variables
 		(Nlayers,width_sinogram) = self.sinogram.shape[:2]
-
-		# win = signal.tukeywin(width_sinogram,0.2)
-		# if Nlayers > 10:
-		# 	win = signal.tukey(Nlayers,0.2).reshape(Nlayers,1) @ win.reshape(1,width_sinogram)
 
 		shift_upd_all = np.zeros([params['max_iter'],Nangles,2], dtype=np.float32)
 		shift_velocity =  np.zeros([Nangles,2], dtype=np.float32)
@@ -60,6 +53,9 @@ class tomo_align:
 		# Determine the optimal size based on downsampled sinogram
 		b = np.zeros([Nlayers, width_sinogram*Nangles])
 		sinogram_model = np.zeros([Nlayers, width_sinogram, Nangles])
+
+		if params['plot_results']:
+			rec = np.zeros([Nlayers, width_sinogram, width_sinogram], dtype=np.float32)
 
 		tomo_obj = astra_ctvlib.astra_ctvlib(Nlayers,width_sinogram, Nangles, np.deg2rad(self.angles))
 		tomo_obj.initializeFBP(params['filter_type'])
@@ -76,15 +72,10 @@ class tomo_align:
 
 			#step 1: shift (downsampled) sinogram (Line: 371) 
 			sinogram_shifted = self.sinogram
-			# weights_shifted = self.weights
 
 			# geom_mat = [scale, rotation, shear]
 			geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])
 			sinogram_shifted = linearShifts.imdeform_affine_fft(sinogram_shifted, geom_mat , shift_total)
-
-			# Shift Weights (Lines: 376 & 379)
-			# weights_shifted = linearShifts.imshift_linear(weights_shifted, shift_total, 'linear')
-			# weights_shifted = np.maximum(0, weights_shifted * win)
 
 			if ii == 0:
 				mass = np.mean(np.abs(sinogram_shifted))
@@ -96,11 +87,11 @@ class tomo_align:
 			tomo_obj.FBP(int(params['apply_positivity']))
 
 			#optional step: regularization
-			# if self.use_TV:
-			#   tomo_obj.tv_chambolle(tvIter)
+			if params['use_TV']: tomo_obj.tv_fgp(20, 0.1)
 
 			#step 3: get reprojections from current tomogram (using ASTRA) (Line 455)
 			tomo_obj.forwardProjection()
+
 			tt = tomo_obj.get_model_projections()
 			for s in range(Nangles):
 				sinogram_model[:,:,s] = tt[:,s*width_sinogram:(s+1)*width_sinogram]
@@ -122,9 +113,9 @@ class tomo_align:
 			#optional step: add smoothing to shifts to prevent trapping at the local solutions
 			if params['momentum_acceleration']:
 				momentum_memory = 2
-				max_update = np.quantile(np.abs(shift_upd), 0.995)
-				if ii > momentum_memory:
-					(shift_upd, shift_velocity) = calcRefine.add_momentum(shift_upd_all[ii-momentum_memory:ii,:,:], shift_velocity, int(max_update * binFactor < 0.5) )
+				max_update = np.quantile(np.abs(shift_upd), 0.995, axis=0)
+				if ii >= momentum_memory:
+					(shift_upd, shift_velocity) = calcRefine.add_momentum(shift_upd_all[ii-momentum_memory:ii,:,:], shift_velocity, max_update * binFactor < 0.5 )
 
 			shift_upd[:,1] = shift_upd[:,1] - np.median(shift_upd[:,1])
 
@@ -153,17 +144,21 @@ class tomo_align:
 
 			# Check for Maximal Update
 			max_update = np.max( np.quantile(np.abs(shift_upd), 0.995, axis=0) )
-			if max_update * binFactor < params['min_step_size']:
-				print('Minimal Step Limit Reached')
-				break
+			if max_update * binFactor < params['min_step_size']: break
+
+		if binFactor == 1: tomo_obj.saveRecon(params['filename'])
+		self.sinogram_shifted = sinogram_shifted
 
 		# Prepare outputs to be returned
 		params['tilt_angle']     = geom['tilt_angle']
 		params['skewness_angle'] = geom['skewness_angle']
 
-		optimal_shift += shift_total * binFactor
+		# vertical offset is a degree of freedom => minimize of offset 
+		shift_total[:,1] = shift_total[:,1] - np.median(shift_total[:,1]) 
 
-		return (optimal_shift, err)
+		optimal_shift[ang_order,:] = optimal_shift + shift_total * binFactor
+
+		return (optimal_shift, params)
 
 	def smooth(self, signal, window_len):
 #		if signal.size < window_len:

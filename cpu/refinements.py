@@ -1,13 +1,11 @@
 from numpy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
+import shifts_cpu as shifts
 import numpy as np
-import shifts
 
 class refinements:
 
     def __init__(self,inPar):
         self.par = inPar
-        self.FFTW_full = None
-        self.FFTW_downsample = None
         
 ## --------------------------------------------------------------------------------------------------------
 
@@ -16,8 +14,8 @@ class refinements:
         # Debugger
         # import pdb; pdb.set_trace()
 
-        if iter == 0:
-            geometry_corr = np.array([ np.mean(self.par['lamino_angle']), np.mean(geom['tilt_angle']), np.mean(geom['skewness_angle']) ])
+        # if iter == 0:
+        #     geometry_corr = np.array([ np.mean(self.par['lamino_angle']), np.mean(geom['tilt_angle']), np.mean(geom['skewness_angle']) ])
  
         resid_sino = self.get_resid_sino(sino_model,sinogram_measured, self.par['high_pass_filter'])
 
@@ -25,12 +23,12 @@ class refinements:
         (dX, dY) = self.get_img_grad(sino_model)
 
         # get tilt angle correction
-        Dvec = dX * np.linspace(-1,1,dX.shape[0]).reshape(dX.shape[0],1,1) - dY * np.linspace(-1,1,dY.shape[1]).reshape(1,dX.shape[1],1)
+        Dvec = dX * np.linspace(-1,1,dX.shape[0]).reshape(dX.shape[0],1,1) - dY * np.linspace(-1,1,dY.shape[1]).reshape(1,dY.shape[1],1)
         optimal_shift = self.get_GD_update(Dvec, resid_sino, self.par['high_pass_filter'])
         geom['tilt_angle'] = geom['tilt_angle'] + step_relation * np.rad2deg(optimal_shift)
 
         # get shear gradient
-        Dvec = dY * np.linspace(-1,1,dY.shape[1]).reshape(1,dX.shape[1],1)
+        Dvec = dY * np.linspace(-1,1,dY.shape[1]).reshape(1,dY.shape[1],1)
         optimal_shift = self.get_GD_update(Dvec, resid_sino, self.par['high_pass_filter'])
         geom['skewness_angle'] = geom['skewness_angle'] + step_relation * np.rad2deg(optimal_shift)
 
@@ -130,7 +128,7 @@ class refinements:
         Np = img.shape
 
         if axis == 0:
-            X = 2 * (1j) * np.pi * (np.fft.fftshift( np.arange(Np[1])/Np[1] ) - 0.5)
+            X = 2 * (1j) * np.pi * (fftshift( np.arange(Np[1])/Np[1] ) - 0.5)
             d_img = fft(img,axis=1)
             d_img = d_img * X.reshape(1,Np[1],1)
 
@@ -139,7 +137,7 @@ class refinements:
             d_img = ifft(d_img, axis=1)
 
         if axis == 1:
-            X = 2 * (1j) * np.pi * (np.fft.fftshift( np.arange(Np[0])/Np[0] ) - 0.5)
+            X = 2 * (1j) * np.pi * (fftshift( np.arange(Np[0])/Np[0] ) - 0.5)
             d_img = fft2(img, axes=(0,1))
             d_img = d_img * X.reshape(Np[0],1,1)
 
@@ -182,21 +180,21 @@ class refinements:
         isReal = np.all(np.isreal(img))
 
         if apply_fft:
-            img = np.fft.fft(img, axis=ax)
+            img = fft(img, axis=ax)
 
         x = np.arange(-Npix[ax]/2, Npix[ax]/2)/Npix[ax]
         sigma = 256 / (Npix[ax]) * sigma
 
         if sigma == 0:
             # Use Derivative Filter
-            spectral_filter = 2*(1j) * np.pi * (np.fft.fftshift( np.arange(Npix[ax])/Npix[ax] ) - 0.5)
+            spectral_filter = 2*(1j) * np.pi * (fftshift( np.arange(Npix[ax])/Npix[ax] ) - 0.5)
         else:
             spectral_filter = fftshift( np.exp(1/(-x**2/sigma**2))  )
 
         img = img * spectral_filter.reshape(shape)
 
         if apply_fft:
-            img = np.fft.ifft(img,axis=ax)
+            img = ifft(img,axis=ax)
 
         if isReal:
             img = np.real(img)
@@ -210,29 +208,33 @@ class refinements:
     # correlation between then is high, it will use this information to
     # accelerate the update in the direction of average velocity 
     def add_momentum(self, shifts_memory, velocity_map, acc_axes):
+        
+        # import pdb; pdb.set_trace()
+
+        shift = shifts_memory[-1,:,:]
+        if np.all(acc_axes==False): return (shift, velocity_map)
+
         import scipy.optimize as optimize
         
-        shift = shifts_memory[-1,:,:]
-
-        Nmem = shifts_memory.shape[0] - 1
+        Nmem = shifts_memory.shape[0]
+        C = np.zeros(Nmem, dtype=np.float32)
 
         # apply only for horizontal, vertical seems to be too unstable         
-        for jj in acc_axes:
+        for jj in np.where(acc_axes==True)[0]:
 
-            if np.all(shift[:,jj] == 0):
-                continue
+            if np.all(shift[:,jj] == 0): continue
 
             for ii in range(Nmem):
                 C[ii] = np.correlate(shift[:,jj], shifts_memory[ii,:,jj].T)
 
             # estimate optimal friction from previous steps 
-            funOptimize = lambda z: np.norm( C - np.exp(-x * np.arange(Nmem, 1,- 1)))
-            decay = optimize.fmin( funOptimize, 0 )
+            funOptimize = lambda z: np.linalg.norm( C - np.exp(-z * np.arange(Nmem, 1,- 1)))
+            decay = optimize.fmin( funOptimize, 0, disp=False )
 
             ######################################
             alpha = 2                                          # scaling of the friction , larger == less memory 
             gain = 0.5                                         # smaller -> lower relative speed (less momentum)
-            friction = np.min( 1, np.max(0,alpha*decay) )    # smaller -> longer memory, more momentum 
+            friction = min( 1, max(0,alpha*decay[0]) )         # smaller -> longer memory, more momentum 
             ######################################
 
             # update velocity map 

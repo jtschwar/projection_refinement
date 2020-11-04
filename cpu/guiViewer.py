@@ -36,6 +36,4 @@ def sliceZ(data):
 	# Start Qt event loop
 	app.exec_()	
 
-def update_sliceZ(newData):
 
-	# Todo: figure out how to update GUI. 

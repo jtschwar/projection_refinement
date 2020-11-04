@@ -1,29 +1,24 @@
-from scipy.signal import convolve
-from numpy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
-import scipy.io as sio
+from cupy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
+from cupyx.scipy.ndimage import convolve
 import numpy as np
+import cupy as cu
 
 # These scripts are part of the cSAXS_toolbox
 
 class shifts: 
 
 	def __init__(self):
-		self.sinogram = None
-		self.shifts = None
-		self.1D_FFTW_full = None
-		self.2D_FFTW_full = None
-		self.1D_FFTW_downsample = None
-		self.2D_FFTW_downsample = None
+		pass
 
 ## --------------------------------------------------------------------------------------------------------
 	
-	# Apply imshift_fft on provided image that was first upsampled to Npix (if needed) and 
+	# Apply imshift_fft on provided image that was first upsampled to cuix (if needed) and 
 	# cropped to region ROI. After shifting, the image is downsampled.
 	def imshift_generic(self, img, shift, smooth, ROI, downsample, interp_sign):
-		## Inputs:
+		## Icuuts:
 		## **img            2D stacked image
 		## **shift          Nx2 vector of shifts applied on the image
-		## **Npix           2x1 int, size of the image to be upsampled before shift
+		## **cuix           2x1 int, size of the image to be upsampled before shift
 		## **smooth         How many pixels around edges will be smoothed before shifting the array
 		## **ROI            Array, used to crop the array to smaller size
 		## **downsample     Downsample factor, 1 == no downsampling
@@ -32,7 +27,8 @@ class shifts:
 		## Outputs:
 		## ++img            2D Stacked Image
 
-		real_img = np.all(np.isreal(img))
+		img = cu.array(img)
+		real_img = cu.all(cu.isreal(img))
 
 		# Debugger
 		# import pdb; pdb.set_trace()
@@ -55,21 +51,21 @@ class shifts:
 			img = self.imgaussfilt3_conv(img, [downsample, downsample, 0])
 
 			#Correct for boundary effects of the convolution based smoothing
-			img = img / self.imgaussfilt3_conv(np.ones([Np[0],Np[1],1]), [downsample, downsample, 0])
+			img = img / self.imgaussfilt3_conv(cu.ones([Np[0],Np[1],1]), [downsample, downsample, 0])
 
-			outShape = np.array([int(np.ceil(Np[0]/downsample/2)*2), int(np.ceil(Np[1]/downsample/2)*2)])
+			outShape = np.array([int(cu.ceil(Np[0]/downsample/2)*2), int(cu.ceil(Np[1]/downsample/2)*2)])
 			img = self.interpolateFT_centered(self.smooth_edges(img, int(2*downsample), np.array([0,1],dtype=int)), outShape, interp_sign)
 
 		if real_img:
-			img = np.real(img)
+			img = cu.real(img)
 
-		return img
+		return cu.asnumpy(img)
 
 ## --------------------------------------------------------------------------------------------------------
 
 	## Take stake of 2D images and smooths boundaries to avoid sharp edge artifacts during imshift_fft
 	def smooth_edges(self, img, win_size, dims):
-		#   Inputs:
+		#   Icuuts:
 	    #       **img - 2D stacked array, smoothing is done along first two dimensions 
 	    #       **win_size - size of the smoothing region, default is 3 
 	    #       **dims - list of dimensions along which will by smoothing done 
@@ -78,11 +74,6 @@ class shifts:
 
 		if np.isscalar(dims):
 			dims = np.array([dims], dtype=int)
-
-		# if len(dims) == 1:
-		# 	dims = np.array([dims[0]],dtype=np.int)
-		# else:
-		# 	dims = np.array([0,1], dtype=np.int) # smooth along first 2 dimensions
 
 		Npix = img.shape
 		
@@ -106,16 +97,17 @@ class shifts:
 				kernel = kernel.reshape(win_size,1,1)		
 			else:
 				kernel = kernel.reshape(1,win_size,1)
+			kernel = cu.array(kernel)
 
 			# smooth across the image edges
-			img_tmp = convolve(img_temp, kernel,mode='same')
+			img_tmp = convolve(img_temp, kernel)
 			
 			#avoid boundary issues form convolution
 			boundary_shape = np.array([1,1,1])
 			boundary_shape[ii] = len(ind)
 			boundary_shape = tuple(boundary_shape)
 
-			img_tmp = img_tmp / convolve(np.ones(boundary_shape),kernel,mode='same')
+			img_tmp = img_tmp / convolve(cu.ones(boundary_shape),kernel)
 
 			if ii == 0:
 				img[ind,:,:] = img_tmp
@@ -128,8 +120,8 @@ class shifts:
 	
 	## Apply shifts with subpixel accuracy that can be different for each frame.
 	def imshift_fft(self,img, xShifts, yShifts, apply_fft):
-		## Inputs:
-		## **img            input image / stack of images
+		## Icuuts:
+		## **img            icuut image / stack of images
 		## **shifts         applied shifts for each frame (Nz x 2)
 		## **Weights        Apply Importance weighting to avoid noise in low reliability regions
 
@@ -149,7 +141,7 @@ class shifts:
 		# 2D FFT Shifting
 		else:
 
-			real_img = np.all(np.isreal(img))
+			real_img = cu.all(cu.isreal(img))
 
 			if apply_fft:
 				img = fft2(img,axes=(0,1))
@@ -157,28 +149,30 @@ class shifts:
 			# Shift Along X-Direction
 			arrayMin = -np.floor(Np[1]/2)
 			arrayMax = np.ceil(Np[1]/2)
-			xGrid = ifftshift(np.arange(arrayMin,arrayMax))/Np[1]
+			xGrid = ifftshift(cu.arange(arrayMin,arrayMax))/Np[1]
+
+			# import pdb; pdb.set_trace()
 
 			# Output shape : 1 x ny x nz 
 			if np.isscalar(xShifts):
-				X = (xGrid.reshape(Np[1],1) * xShifts).reshape(1,Np[1],1)
+				X = (xGrid.reshape(Np[1],1) * cu.array(xShifts)).reshape(1,Np[1],1)
 			else:
-				X = (xGrid.reshape(Np[1],1) @ xShifts.reshape(1,Np[2])).reshape(1,Np[1],Np[2])
-			X = np.exp((-2*(1j)*np.pi)*X)
+				X = (xGrid.reshape(Np[1],1) @ cu.array(xShifts).reshape(1,Np[2])).reshape(1,Np[1],Np[2])
+			X = cu.exp((-2*(1j)*cu.pi)*X)
 
 			img = img * X
 
 			# Shift Along Y-Direction
 			arrayMin = -np.floor(Np[0]/2)
 			arrayMax = np.ceil(Np[0]/2)
-			yGrid = ifftshift(np.arange(arrayMin,arrayMax))/Np[0]
+			yGrid = ifftshift(cu.arange(arrayMin,arrayMax))/Np[0]
 
 			# Output shape : nx x 1 x nz 
-			if np.isscalar(yShifts):
-				Y = (yGrid.reshape(Np[0],1) * yShifts).reshape(Np[0],1,1)
+			if cu.isscalar(yShifts):
+				Y = (yGrid.reshape(Np[0],1) * cu.array(yShifts)).reshape(Np[0],1,1)
 			else:
-				Y = (yGrid.reshape(Np[0],1) @ yShifts.reshape(1,Np[2])).reshape(Np[0],1,Np[2])
-			Y = np.exp((-2*(1j)*np.pi)*Y)
+				Y = (yGrid.reshape(Np[0],1) @ cu.array(yShifts).reshape(1,Np[2])).reshape(Np[0],1,Np[2])
+			Y = cu.exp((-2*(1j)*cu.pi)*Y)
 
 			img = img * Y
 
@@ -186,7 +180,7 @@ class shifts:
 				img = ifft2(img,axes=(0,1))
 
 			if real_img:
-				img = np.real(img)
+				img = cu.real(img)
 
 		return img
 
@@ -195,9 +189,9 @@ class shifts:
 	# Perform FT interpolation of provided stack of images using FFT so that the center of mass is not
 	# modified after the resolution change. This function is critical for subpixel accurate up/downsampling.
 	def interpolateFT_centered(self, img, Np_new, interp_sign):
-		## Inputs:
-		## **img            - input image / stack of images
-		## **Np_new			-(2x1 vector) Size of Interpolated Array
+		## Icuuts:
+		## **img            - icuut image / stack of images
+		## **cu_new			-(2x1 vector) Size of Interpolated Array
 		## **interp_sign    - +1 or -1, sign that adds extra 1px shift. 
 
 		## Outputs:
@@ -205,14 +199,14 @@ class shifts:
 
 		Np = img.shape
 		Np_new = 2 + Np_new
-		real_img = np.all(np.isreal(img))
+		real_img = cu.all(cu.isreal(img))
 
 		scale = np.prod(Np_new - 2) / np.prod(Np[:2])
 		downsample = int(np.ceil( np.sqrt(1/scale) ))
 
 		# Apply Padding in X/Y to Account for Boundary Issues
 		padShape = ((downsample,downsample+1),(downsample,downsample+1),(0,0))
-		img = np.pad(img, padShape, 'symmetric')
+		img = cu.pad(img, padShape, 'symmetric')
 
 		# Go to the fourier space
 		img = fft2(img,axes=(1,0))
@@ -237,7 +231,7 @@ class shifts:
 
 		# Perserve Complexity
 		if real_img:
-			img = np.real(img)
+			img = cu.real(img)
 
 		return img
 
@@ -245,7 +239,7 @@ class shifts:
 	
 	# Fast version of fftshift for stack of 2D images.
 	def fftshift_2D(self,img):
-		## Inputs:
+		## Icuuts:
 		## **img 		- Stack of 2D images
 
 		## Outputs:
@@ -264,7 +258,7 @@ class shifts:
 	
 	# Fast version of ifftshift for stack of 2D images.
 	def ifftshift_2D(self, img):
-		## Inputs:
+		## Icuuts:
 		## **img 		- Stack of 2D images
 
 		## Outputs:
@@ -283,8 +277,8 @@ class shifts:
 	
 	# Adjusts the size by zero padding or cropping.
 	def crop_pad(self, img, outSize):
-		# Inputs: 
-		#   **img                input image
+		# Icuuts: 
+		#   **img                icuut image
 		#   **outsize            size of final image
 		# *optional:*
 		#   **fill               value to fill padded regions (Default = 0)
@@ -299,11 +293,11 @@ class shifts:
 		centerOut = np.floor(Nout/2) 
 		cenout_cen = centerOut - center
 
-		imout = np.zeros( np.append(Nout, Nin[2]), dtype=type(img))
+		imout = cu.zeros( np.append(Nout, Nin[2]), dtype=type(img))
 
 		# import pdb; pdb.set_trace()
-		# xCrop = np.arange( np.maximum(cenout_cen[0],0), np.minimum(cenout_cen[0]+Nin[0],Nout[0]) )
-		# yCrop = np.arange( np.maximum(cenout_cen[1],0), np.minimum(cenout_cen[1]+Nin[1],Nout[1]) )
+		# xCrop = cu.arange( cu.maximum(cenout_cen[0],0), cu.minimum(cenout_cen[0]+Nin[0],Nout[0]) )
+		# yCrop = cu.arange( cu.maximum(cenout_cen[1],0), cu.minimum(cenout_cen[1]+Nin[1],Nout[1]) )
 
 		xCrop = np.arange( np.maximum(-cenout_cen[0],0), np.minimum(-cenout_cen[0]+Nout[0],Nin[0]), dtype=int )
 		yCrop = np.arange( np.maximum(-cenout_cen[1],0), np.minimum(-cenout_cen[1]+Nout[1],Nin[1]), dtype=int )
@@ -317,17 +311,17 @@ class shifts:
 	# apply gaussian smoothing along all three dimensions using convolution, 
 	# faster than matlab alternative
 	def imgaussfilt3_conv(self, X, filter_size):
-		# Inputs: 
+		# Icuuts: 
 		#   **A           		3D volume to be smoothed 
 		#   **filter_size       gaussian smoothing constant, scalar or use vector for anizotropic kernel smoothing
 		# returns: 
 		#   ++A           		smoothed volume 
 
-		ker = self.get_kernel(filter_size[0])
+		ker = cu.array(self.get_kernel(filter_size[0]))
 		shape = ker.shape[0]
 
-		X = convolve(X,ker.reshape(shape,1,1),mode='same')
-		X = convolve(X,ker.reshape(1,shape,1),mode='same')
+		X = convolve(X,ker.reshape(shape,1,1))
+		X = convolve(X,ker.reshape(1,shape,1))
 
 		return X
 
@@ -351,12 +345,14 @@ class shifts:
 
 	# Apply Accurate Affine Deformation on image 
 	def imdeform_affine_fft(self, img, affine_matrix, shift):
-		# Inputs:  
+		# Icuuts:  
 		#     **img             - 2D or stack of 2D images 
 		#     **affine_matrix   - 2x2xN affine matrix 
 		#     **shift           - Nx2 vector of shifts to be applied 
 		# *returns*: 
 		#     ++img             - deformed image 
+
+		img = cu.array(img)
 
 		if np.all(shift != 0):
 			img = self.imshift_fft(img, shift[:,0], shift[:,1], True)
@@ -366,75 +362,25 @@ class shifts:
 		shear = affine_matrix[2,:]
 
 		# Apply rescaling if non-square pixel sizes. 
-		# if np.any(np.abs(scale[:]-1) > 1e-5):
+		# if cu.any(cu.abs(scale[:]-1) > 1e-5):
 		# 	img = self.imrescale_frft(img,scale)
 
 		# Apply shear transformation
-		if np.any(np.abs(shear[:]) > 1e-5):
-			img = self.imshear_fft(img,shear,1)
+		# if np.any(np.abs(shear[:]) > 1e-5):
+		# 	img = self.imshear_fft(img,shear,0)
 
 		# Apply rotation 
-		if np.any(abs(rotation[:])> 1e-5):
+		if np.any(np.abs(rotation[:])> 1e-5):
 			img = self.imrotate_ax_fft(img,rotation,3)
 
-		return img
-
-## --------------------------------------------------------------------------------------------------------
-
-	# Apply shift that can be different for each frame
-	# 	+ Compared to imshift_fft it does not have periodic boundary
-	#   + it is based on linear interpolation, integer shift is equivalent to imshift_fft (up to boundary conditions)
-	def imshift_linear(self, img, shift, method):
-		from scipy import interpolate
-
-		# Inputs: 
-		#   **img       - input image / stack of images
-		#   **shift 	- applied shift or vector of shifts for eachfram
-		#   **method 	- choose interpolation method: {linear}, cubic
-		#
-		# returns:
-		#   ++img       - shifted image / stack of images
-
-		isReal = np.all(np.isreal(img))
-
-		(Nx, Ny, Nlayers) = img.shape
-
-		for ii in range(Nlayers):
-			img[:,:,ii] = interpolate.interp2d(img[:,:,ii], -x[ii] + np.arange(Ny), -y[ii] + np.arange(Nx), kind=method)
-
-		return img
-
-## --------------------------------------------------------------------------------------------------------
-
-	# Apply shift that can be different for each frame
-	# 	+ Compared to imshift_fft it does not have periodic boundary
-	#   + it is based on linear interpolation, integer shift is equivalent to imshift_fft (up to boundary conditions)
-	def interpolate_linear(self, img, shift, method):
-		from scipy import interpolate
-
-		# Inputs: 
-		#   **img       - input image / stack of images
-		#   **shift 	- applied shift or vector of shifts for eachfram
-		#   **method 	- choose interpolation method: {linear}, cubic
-		#
-		# returns:
-		#   ++img       - shifted image / stack of images
-
-		isReal = np.all(np.isreal(img))
-
-		(Nx, Ny, Nlayers) = img.shape
-
-		for ii in range(Nlayers):
-			img[:,:,ii] = interpolate.interp2d(img[:,:,ii], -x[ii] + np.arange(Ny), -y[ii] + np.arange(Nx), kind=method)
-
-		return img
+		return cu.asnumpy(img)
 
 ## --------------------------------------------------------------------------------------------------------
 
 	# FFT-based image rotation for a stack of images along given axis
 	# for the accurate rotation of sampled images (Optic Communications, 1997)
 	def imrotate_ax_fft(self, img, theta, axis):
-		# Inputs: 
+		# Icuuts: 
 		#   **img       - stacked array of images to be rotated 
 		#   **theta     - rotation angle 
 		# *optional*
@@ -443,9 +389,9 @@ class shifts:
 		#   ++img       - rotated image 
 
 		if np.all(theta == 0):
-			return
+			return img
 
-		real_img = np.all(np.isreal(img))
+		real_img = cu.all(cu.isreal(img))
 
 		# if axis == 1:
 		# 	img = permute(img, [3,2,1])
@@ -453,26 +399,23 @@ class shifts:
 		# elif: axis == 2:
 		# 	img = permute(img, [1,3,2])
 
-		# angle_90_offset = np.round(theta/90)
+		# angle_90_offset = cu.round(theta/90)
 
 		# if angle_90_offset != 0:
-		# 	img = np.rot90(img,angle_90_offset)
+		# 	img = cu.rot90(img,angle_90_offset)
 		# 	theta = theta - 90*angle_90_offset
-
-		if np.all(theta == 0):
-			return
 
 		(M,N,_) = img.shape
 
 		#Make possible to rotate each slice with different angle
 		Nangles = theta.shape[0]
 		theta = theta.reshape(1,1,Nangles)
-		xgrid = ifftshift( np.arange(-np.floor(M/2),np.ceil(M/2) ) /M )
-		ygrid = ifftshift( np.arange(-np.floor(N/2),np.ceil(N/2) ) /N )
-
+		xgrid = ifftshift( cu.arange(-np.floor(M/2),np.ceil(M/2) )) / M
+		ygrid = ifftshift( cu.arange(-np.floor(N/2),np.ceil(N/2) )) / N
+ 
 		# the 0.5px offset is important to make the rotation equivalent ot matlab imrotate
-		Mgrid = np.arange(M) - np.floor(M/2) + 0.5 
-		Ngrid = np.arange(N) - np.floor(N/2) + 0.5
+		Mgrid = cu.arange(M) - np.floor(M/2) + 0.5 
+		Ngrid = cu.arange(N) - np.floor(N/2) + 0.5
 
 		Mgrid = Mgrid.reshape(M, 1, 1)
 		Ngrid = Ngrid.reshape(1, N, 1)
@@ -484,7 +427,7 @@ class shifts:
 		img = ifft( fft(img, axis=1) * M1, axis=1 )
 
 		if real_img:
-			img = np.real(img)
+			img = cu.real(img)
 
 		# if axis == 1:
 		# 	img = permute(img, [3,2,1])
@@ -497,12 +440,53 @@ class shifts:
 	# Auxiliarly function to be used for GPU kernel merging
 	def aux_fun(self, theta, xgrid, ygrid, Mgrid, Ngrid):
 
-		Nx = - np.sin(np.deg2rad(theta)) * xgrid.reshape(xgrid.shape[0],1,1)
-		Ny = np.tan(np.deg2rad(theta/2)) * ygrid.reshape(1,ygrid.shape[0],1)
+		Nx = - cu.array(np.sin(np.deg2rad(theta))) * xgrid.reshape(xgrid.shape[0],1,1)
+		Ny = cu.array(np.tan(np.deg2rad(theta/2))) * ygrid.reshape(1,ygrid.shape[0],1)
 
-		M1 = np.exp( (-2*(1j)*np.pi) * Mgrid * Ny )
-		M2 = np.exp( (-2*(1j)*np.pi) * Ngrid * Nx )
+		M1 = cu.exp( (-2*(1j)*cu.pi) * Mgrid * Ny )
+		M2 = cu.exp( (-2*(1j)*cu.pi) * Ngrid * Nx )
 
 		return (M1, M2)
 
+## --------------------------------------------------------------------------------------------------------
+
+	# IMSHEAR_FFT fft-based image shearing function for a stack of images along given axis 
+	def imshear_fft(self, img, theta, shear_axis):
+		# Inputs: 
+		#   **img_stack  - stack of 2D images 
+		#   **theta      - shear angle, scalar 
+		#   **shear_axis - image axis along which the image will be shared 
+		# *returns*: 
+		#   ++img        - shreared image 
+
+		if np.all(theta == 0): return img
+
+		real_img = np.all(np.isreal(img))
+
+		if np.any(np.abs(theta) > 45): 
+			print('Out of Valid angle range [-45,45], use rot90 to get into valid range')
+			return img
+
+		(M,N,_) = img.shape
+
+		# allow different theta for each slice 
+		Nangles = theta.shape[0]
+		theta = theta.reshape(1,1,Nangles)
+
+		# Rotate images by a combination of shears
+		if shear_axis == 0: 
+			Ny =  cu.array(np.tan(np.deg2rad(theta/2))) * (ifftshift(cu.arange(-np.floor(N/2), np.ceil(N/2)))/N).reshape(1,N,1)			
+			Mgrid = 2*(1j)*cu.pi * (cu.arange(M)-np.floor(M/2)+1)
+			Mgrid = Mgrid.reshape(M, 1, 1)
+			img = ifft(fft(img, axis=1) * cu.exp(-Mgrid * Ny), axis=1)
+		elif shear_axis == 1: 
+			Nx = -cu.array(np.sin(np.deg2rad(theta)))   * (ifftshift(cu.arange(-np.floor(M/2), np.ceil(M/2)))/M).reshape(1,M,1)
+			Ngrid = 2*(1j)*cu.pi * (cu.arange(N)-np.floor(N/2)+1)
+			Ngrid = Ngrid.reshape(N, 1, 1)
+			img = ifft(fft(img,axis=0)  * cu.exp(Ngrid * Nx), axis=0)
+		else: print('Shear axis has to be 1 or 2')
+
+		if real_img: img = np.real(img)
+
+		return img		
 		

@@ -132,10 +132,10 @@ class shifts:
 
 		# Shift Only Along One Axis -> Faster (TODO)
 		if np.all(xShifts == 0):
-			print('Tbd: Shift Along One Axis')
+			print('Tbd: Shift Along One Axis (X)')
 			# img = self.imshift_fft_ax(img, y, 1)
 		elif np.all(yShifts == 0):
-			print('Tbd: Shift Along One Axis')
+			print('Tbd: Shift Along One Axis  (Y)')
 			# img = self.imshift_fft_ax(img, x, 2)
 
 		# 2D FFT Shifting
@@ -218,7 +218,8 @@ class shifts:
 		img = self.ifftshift_2D(self.crop_pad(self.fftshift_2D(img), Np_new))
 
 		# Apply +/- 0.5 px Shift in Cropped Space
-		img = self.imshift_fft(img, interp_sign*-0.5, interp_sign*-0.5, False)
+		img = self.imshift_fft(img, interp_sign*0.5, interp_sign*0.5, False)
+		# img = self.imshift_fft(img, interp_sign*-0.5, interp_sign*-0.5, False)
 
 		# Return to the Real Space
 		img = ifft2(img,axes=(0,1))
@@ -296,8 +297,8 @@ class shifts:
 		imout = cu.zeros( np.append(Nout, Nin[2]), dtype=type(img))
 
 		# import pdb; pdb.set_trace()
-		# xCrop = cu.arange( cu.maximum(cenout_cen[0],0), cu.minimum(cenout_cen[0]+Nin[0],Nout[0]) )
-		# yCrop = cu.arange( cu.maximum(cenout_cen[1],0), cu.minimum(cenout_cen[1]+Nin[1],Nout[1]) )
+		# xCrop = np.arange( np.maximum(cenout_cen[0],0), np.minimum(cenout_cen[0]+Nin[0],Nout[0]) )
+		# yCrop = np.arange( np.maximum(cenout_cen[1],0), np.minimum(cenout_cen[1]+Nin[1],Nout[1]) )
 
 		xCrop = np.arange( np.maximum(-cenout_cen[0],0), np.minimum(-cenout_cen[0]+Nout[0],Nin[0]), dtype=int )
 		yCrop = np.arange( np.maximum(-cenout_cen[1],0), np.minimum(-cenout_cen[1]+Nout[1],Nin[1]), dtype=int )
@@ -354,8 +355,11 @@ class shifts:
 
 		img = cu.array(img)
 
-		if np.all(shift != 0):
+		if np.any(shift != 0):
 			img = self.imshift_fft(img, shift[:,0], shift[:,1], True)
+
+		# if np.all(shift != 0):
+		# 	img = self.imshift_fft(img, shift[:,0], shift[:,1], True)
 
 		scale = affine_matrix[0,:]
 		rotation = affine_matrix[1,:]

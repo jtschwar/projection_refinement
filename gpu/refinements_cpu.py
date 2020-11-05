@@ -96,7 +96,7 @@ class refinements:
         shift_y = - np.sum(dY * resid_sino, axis=(0,1)) / np.sum(dY**2, axis=(0,1) )
         
         shift = np.array([shift_x, shift_y]).T
-        err = np.sqrt(np.mean(resid_sino**2,axis=(0,1))) / mass
+        err = np.sqrt( np.mean(resid_sino**2, axis=(0,1)) ) / mass
 
         return (shift, err)
 
@@ -189,7 +189,7 @@ class refinements:
             # Use Derivative Filter
             spectral_filter = 2*(1j) * np.pi * (fftshift( np.arange(Npix[ax])/Npix[ax] ) - 0.5)
         else:
-            spectral_filter = fftshift( np.exp(1/(-x**2/sigma**2))  )
+            spectral_filter = fftshift( np.exp( 1 / (-x**2/sigma**2) )  )
 
         img = img * spectral_filter.reshape(shape)
 

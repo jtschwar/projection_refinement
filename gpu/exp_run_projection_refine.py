@@ -8,7 +8,7 @@ import h5py
 # Input Sinogram and Tilt Angles
 
 file = h5py.File('bowtie_tiltseries.h5','r')
-sinogram = file['tiltSeries'][:,128:512-128,:]
+sinogram = file['tiltSeries'][:,:,:]
 
 (Nx, Ny, Nangles) = sinogram.shape
 
@@ -32,9 +32,7 @@ params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoo
 params.update({'showsorted':True,'plot_results':True, 'plot_results_every':5, 'use_gpu':True})
 params.update({'filename':'bowtie_aligned.h5'})
 
-max_binning = 2**(np.ceil(np.log2(min(Npix, Nlayers))-np.log2(100)))
-binning = 2**(np.arange(max_binning)[::-1])
-#binning = np.array([8, 4, 2, 1],dtype=int)
+binning = np.array([16, 8, 4, 2, 1],dtype=int)
 
 print('\nAlignment Parameters:\n',params,'\n')
 print('Binning factors : {}\n'.format(binning) )
@@ -52,6 +50,8 @@ for jj in range(len(binning)):
     (shift, params) = tomoAlign.tomo_consistency_linear(shift, params)
     tomoAlign.sinogram = sinogram
     tomoAlign.angles = theta
+
+print('Finished Alignments, Saving Data..')
 
 # Save the Aligned Projections, Shifts, and Reconstruciton
 file = h5py.File(params['filename'], 'a')

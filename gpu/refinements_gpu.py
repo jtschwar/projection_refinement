@@ -53,7 +53,7 @@ class refinements:
 
     # Get vertical and horizontal gradient of image using FFT
     def get_img_grad(self, img):
-    # Icuuts:
+    # Inputs:
     #   **img   - stack of images 
     #   **axis  - direction of the derivative 
     # *returns*
@@ -94,7 +94,6 @@ class refinements:
 
         # Align Horizontal
         dX = self.get_img_grad_filtered(sinogram_model, 0, self.par['high_pass_filter'], 5)
-
         dX = self.imfilter_high_pass_1d(dX, 1, self.par['high_pass_filter'], True)
         shift_x = - cu.sum(dX * resid_sino, axis=(0,1)) / cu.sum(dX**2, axis=(0,1))
 

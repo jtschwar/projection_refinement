@@ -80,8 +80,7 @@ class tomo_align:
 			geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])
 			sinogram_shifted = linearShifts.imdeform_affine_fft(sinogram_shifted, geom_mat , shift_total)
 
-			if ii == 0:
-				mass = np.mean(np.abs(sinogram_shifted))
+			if ii == 0: mass = np.median(np.mean(np.abs(sinogram_shifted),axis=(0,1)))
 
 			#step 2: tomo recon (using ASTRA)    
 			for s in range(Nlayers):
@@ -112,7 +111,7 @@ class tomo_align:
 			# Store update history for momentum gradient acceleration
 			shift_upd_all[ii,] = shift_upd
 
-			#step 4.5: add momentum acceleration to improve convergence (TODO)
+			#step 4.5: add momentum acceleration to improve convergence
 			#optional step: add smoothing to shifts to prevent trapping at the local solutions
 			if params['momentum_acceleration']:
 				momentum_memory = 2
@@ -128,7 +127,7 @@ class tomo_align:
 			# Do not allow more than 0.5px per iteration (multiplied by binning factor)
 			shift_upd = np.minimum(max_step, np.abs(shift_upd)) * np.sign(shift_upd)
 
-			#step 5: update shifts
+			#step 5: update total position shift
 			shift_total += shift_upd
 
 			# Enforce smoothness of the estimate position update -> in each iteration 
@@ -147,17 +146,15 @@ class tomo_align:
 
 			# Check for Maximal Update
 			max_update = np.max( np.quantile(np.abs(shift_upd), 0.995, axis=0) )
-			# print('max_update: ',max_update)
-			if max_update * binFactor < params['min_step_size']:
-				# print('Minimal Step Limit Reached')
-				break
+			if max_update * binFactor < params['min_step_size']: break
 
+		# Save the Final Reconstruction and Aligned Tilt Series
 		if binFactor == 1: tomo_obj.saveRecon(params['filename'])
 		self.sinogram_shifted = sinogram_shifted
 
 		# Prepare outputs to be returned
-		params['tilt_angle']     = geom['tilt_angle']
-		params['skewness_angle'] = geom['skewness_angle']
+		params['tilt_angle']     = params['tilt_angle'] + geom['tilt_angle']
+		params['skewness_angle'] = params['tilt_angle'] + geom['skewness_angle']
 
 		# vertical offset is a degree of freedom => minimize of offset 
 		shift_total[:,1] = shift_total[:,1] - np.median(shift_total[:,1]) 

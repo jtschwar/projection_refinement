@@ -26,8 +26,8 @@ shift = np.zeros([sinogram.shape[2],2])
 ######################################################################
 # Useful Tuning Parameters
 
-params = {'min_step_size':0.1, 'max_iter':500, 'use_TV':False, 'high_pass_filter':0.01, 'step_relaxation':0.5}
-params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':False})
+params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filter':0.01, 'step_relaxation':0.5}
+params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':True})
 params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoothing':False, 'ROI':object_ROI.astype(int)})
 params.update({'showsorted':True,'plot_results':True, 'plot_results_every':5, 'use_gpu':True})
 params.update({'filename':'simulation.h5'})
@@ -51,6 +51,8 @@ for jj in range(len(binning)):
     (shift, params) = tomoAlign.tomo_consistency_linear(shift, params)
     tomoAlign.sinogram = sinogram
     tomoAlign.angles = theta
+
+print('Finished Alignments, Saving Data..')
 
 # Save the Aligned Projections, Shifts, and Reconstruciton
 file = h5py.File(params['filename'], 'a')

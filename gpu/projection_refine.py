@@ -1,11 +1,10 @@
+from pytvlib import initialize_algorithm, run
 from pyqtgraph.Qt import QtCore, QtGui
 import pyqtgraph as pg
 from scipy import signal
 from tqdm import tqdm
 import astra_ctvlib
-import pytvlib
 import numpy as np
-import time
 
 class tomo_align:
 
@@ -58,9 +57,9 @@ class tomo_align:
 		if params['plot_results']:
 			rec = np.zeros([Nlayers, width_sinogram, width_sinogram], dtype=np.float32)
 
-		tomo_obj = astra_ctvlib.astra_ctvlib(Nlayers,width_sinogram, Nangles, np.deg2rad(self.angles))
-		tomo_obj.initializeFBP(params['filter_type'])
-		tomo_obj.initializeFP()
+		tomo = astra_ctvlib.astra_ctvlib(Nlayers,width_sinogram, Nangles, np.deg2rad(self.angles))
+		initialize_algorithm(tomo, params['alg'], params['initAlg'])
+		tomo.restart_recon()
 
 		# geometry parameters structure 
 		geom = {'tilt_angle':0, 'skewness_angle':0}
@@ -78,6 +77,7 @@ class tomo_align:
 
 			# geom_mat = [scale, rotation, shear]
 			geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])
+			# geom_mat = np.array([np.ones((Nangles)), params['refine_mask'] * -geom['tilt_angle'], params['refine_mask'] * -geom['skewness_angle']])
 			sinogram_shifted = linearShifts.imdeform_affine_fft(sinogram_shifted, geom_mat , shift_total)
 
 			if ii == 0: mass = np.median(np.mean(np.abs(sinogram_shifted),axis=(0,1)))
@@ -85,18 +85,18 @@ class tomo_align:
 			#step 2: tomo recon (using ASTRA)    
 			for s in range(Nlayers):
 				b[s,:] = sinogram_shifted[s,:,:].transpose().ravel()
-			tomo_obj.setTiltSeries(b)
-			tomo_obj.FBP(int(params['apply_positivity']))
+			tomo.set_tilt_series(b)
+			run(tomo, params['alg'])
 
 			#optional step: regularization
-			if params['use_TV']: tomo_obj.tv_fgp(20, 0.1)
+			if params['use_TV']: tomo.tv_gd(20, 0.1)
 
 			#step 3: get reprojections from current tomogram (using ASTRA) (Line 455)
-			tomo_obj.forwardProjection()
+			tomo.forward_projection()
 
-			tt = tomo_obj.get_model_projections()
+			reproj = tomo.get_model_projections()
 			for s in range(Nangles):
-				sinogram_model[:,:,s] = tt[:,s*width_sinogram:(s+1)*width_sinogram]
+				sinogram_model[:,:,s] = reproj[:,s*width_sinogram:(s+1)*width_sinogram]
 
 			# Refine Geometry (ie tilt_angle & shear) (Line 482)
 			if params['refine_geometry']:
@@ -139,7 +139,7 @@ class tomo_align:
 
 			# # Plot results (Line 572)
 			if params['plot_results'] and (ii % params['plot_results_every'] == 0):
-				recSlice = tomo_obj.getRecon(int(Nlayers//2))
+				recSlice = tomo.get_recon(int(Nlayers//2))
 				sinoSlice = sinogram_shifted[int(Nlayers//2),]
 				self.plot_alignment(recSlice, sinoSlice, err, shift_upd, shift_total, self.angles, params, ii)
 				self.removeImageItems()
@@ -149,7 +149,7 @@ class tomo_align:
 			if max_update * binFactor < params['min_step_size']: break
 
 		# Save the Final Reconstruction and Aligned Tilt Series
-		if binFactor == 1: tomo_obj.saveRecon(params['filename'])
+		if binFactor == 1: tomo.save_recon(params['filename'])
 		self.sinogram_shifted = sinogram_shifted
 
 		# Prepare outputs to be returned

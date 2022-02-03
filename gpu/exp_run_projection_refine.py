@@ -7,13 +7,16 @@ import h5py
 ######################################################################
 # Input Sinogram and Tilt Angles
 
-file = h5py.File('bowtie_tiltseries.h5','r')
+fileName = 'tilt_series.h5'
+outputFname = 'results/aligned.h5'
+
+file = h5py.File(fileName,'r')
 sinogram = file['tiltSeries'][:,:,:]
 
 (Nx, Ny, Nangles) = sinogram.shape
 
 # Choose reconstructed (cropped) region 
-object_ROI = np.array([0,-1,0,-1])
+object_ROI = np.array([0,Nx,0,Ny])
 width_sinogram = Ny
 Nlayers = Nx
 Npix = width_sinogram
@@ -30,7 +33,7 @@ params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filte
 params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':True})
 params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoothing':False, 'ROI':object_ROI.astype(int)})
 params.update({'showsorted':True,'plot_results':True, 'plot_results_every':5, 'use_gpu':True})
-params.update({'filename':'bowtie_aligned.h5'})
+params.update({'filename':outputFname,'alg':'SART','initAlg':'sequential'})
 
 binning = np.array([16, 8, 4, 2, 1],dtype=int)
 

@@ -57,7 +57,7 @@ class tomo_align:
 		if params['plot_results']:
 			rec = np.zeros([Nlayers, width_sinogram, width_sinogram], dtype=np.float32)
 
-		tomo = astra_ctvlib.astra_ctvlib(Nlayers,width_sinogram, Nangles, np.deg2rad(self.angles))
+		tomo = astra_ctvlib.astra_ctvlib(Nlayers,width_sinogram, np.deg2rad(self.angles))
 		initialize_algorithm(tomo, params['alg'], params['initAlg'])
 		tomo.restart_recon()
 
@@ -76,7 +76,10 @@ class tomo_align:
 			sinogram_shifted = self.sinogram
 
 			# geom_mat = [scale, rotation, shear]
-			geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])
+			if hasattr(params['tilt_angle'],"__len__"):
+				geom_mat = np.array([np.ones((Nangles)), params['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])				
+			else: # load original rotations if available
+				geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])				
 			# geom_mat = np.array([np.ones((Nangles)), params['refine_mask'] * -geom['tilt_angle'], params['refine_mask'] * -geom['skewness_angle']])
 			sinogram_shifted = linearShifts.imdeform_affine_fft(sinogram_shifted, geom_mat , shift_total)
 

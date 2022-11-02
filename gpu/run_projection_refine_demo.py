@@ -32,13 +32,13 @@ shift = np.zeros([sinogram.shape[2],2])
 
 params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filter':0.01, 'step_relaxation':0.5}
 params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':True})
-params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoothing':False, 'ROI':object_ROI.astype(int)})
+params.update({'lamino_angle':90, 'position_update_smoothing':False, 'ROI':object_ROI.astype(int)})
 params.update({'showsorted':True,'plot_results':True, 'plot_results_every':15, 'use_gpu':True})
 params.update({'filename':outputFname})
 
 # Chose Reconstruction Algorithm:
 # Option 1: FBP / WBP great for fast alignment and X-Ray Datasets
-params.update({'alg': 'FBP', 'filter_type':'ram-lak'})
+params.update({'alg': 'FBP', 'initAlg':'ram-lak'})
 
 #Option 2: SART ~10x slower but accurately aligns electron tomography datasets with missing wedge 
 # params.update({'alg': 'SART', 'initAlg':'sequential'})

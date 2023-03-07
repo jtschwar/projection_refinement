@@ -17,7 +17,7 @@ class refinements:
         # if iter == 0:
         #     geometry_corr = np.array([ np.mean(self.par['lamino_angle']), np.mean(geom['tilt_angle']), np.mean(geom['skewness_angle']) ])
  
-        resid_sino = self.get_resid_sino(sino_model,sinogram_measured, self.par['high_pass_filter'])
+        resid_sino = self.get_resid_sino(sino_model,sinogram_measured, self.par['high_pass_filter'],1)
 
         step_relation = 0.01
         (dX, dY) = self.get_img_grad(sino_model)
@@ -82,7 +82,7 @@ class refinements:
         shift_x = np.zeros(sinogram_model.shape[2])
         shift_y = np.zeros(sinogram_model.shape[2])
 
-        resid_sino = self.get_resid_sino(sinogram_model, sinogram, self.par['high_pass_filter'])
+        resid_sino = self.get_resid_sino(sinogram_model, sinogram, self.par['high_pass_filter'],1)
         resid_sino = self.imfilter_high_pass_1d(resid_sino,1,self.par['high_pass_filter'], True)
 
         # Align Horizontal
@@ -91,6 +91,7 @@ class refinements:
         shift_x = - np.sum(dX * resid_sino, axis=(0,1)) / np.sum(dX**2, axis=(0,1))
 
         # Align Vertical
+        resid_sino = self.get_resid_sino(sinogram_model, sinogram, self.par['high_pass_filter'],0)        
         dY = self.get_img_grad_filtered(sinogram_model, 1, self.par['high_pass_filter'], 5)
         dY = self.imfilter_high_pass_1d(dY, 0, self.par['high_pass_filter'], True)
         shift_y = - np.sum(dY * resid_sino, axis=(0,1)) / np.sum(dY**2, axis=(0,1) )
@@ -105,13 +106,13 @@ class refinements:
     # calculate filtered difference between sinogram_model  and sinogram 
     # || (sinogram_model  - sinogram) \ast ker ||
     # filtering is used for suppresion of low spatial freq. errors 
-    def get_resid_sino(self, sinogram_model, sinogram, high_pass_filter):
+    def get_resid_sino(self, sinogram_model, sinogram, high_pass_filter,axis=0):
 
         # Calculate residuum
         resid_sino = sinogram_model - sinogram
 
         # Apply high pass filter => get rid of phase artifacts
-        resid_sino = self.imfilter_high_pass_1d(resid_sino, 1, high_pass_filter, True)
+        resid_sino = self.imfilter_high_pass_1d(resid_sino, axis, high_pass_filter, True)
 
         return resid_sino
 

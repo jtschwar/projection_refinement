@@ -5,6 +5,7 @@ from scipy import signal
 from tqdm import tqdm
 import astra_ctvlib
 import numpy as np
+import h5py
 
 class tomo_align:
 
@@ -151,8 +152,7 @@ class tomo_align:
 			max_update = np.max( np.quantile(np.abs(shift_upd), 0.995, axis=0) )
 			if max_update * binFactor < params['min_step_size']: break
 
-		# Save the Final Reconstruction and Aligned Tilt Series
-		if binFactor == 1: tomo.save_recon(params['filename'])
+		# Assign the Aligned Tilt Series as Member Variable
 		self.sinogram_shifted = sinogram_shifted
 
 		# Prepare outputs to be returned
@@ -240,3 +240,27 @@ class tomo_align:
 	def removeImageItems(self):
 		self.imPtr1.removeItem(self.iItem1)
 		self.imPtr2.removeItem(self.iItem2)
+
+
+	def save_alignment_results(self,shift,params):
+		# Save the Aligned Projections, Shifts, and Reconstruciton
+		file = h5py.File(params['filename'], 'w')
+		
+		# Pull the Parameter for Alignement 
+		paramGroup = file.create_group('params')
+		for key,item in params.items():
+			paramGroup.attrs[key] = item
+		
+		# Save Aligned Dataset
+		tiltSeries = self.sinogram_shifted; tiltSeries[tiltSeries<0] = 0
+		file.create_dataset('aligned_tiltSeries', data=self.tiltSeries)
+		file.create_dataset('aligned_shifts', data=shift)
+		file.create_dataset('tiltAngles', data=self.angles)
+		
+		# Save Aligned Reconstruction
+		(Nx,Ny) = self.sinogram.shape[:2]
+		recon = np.zeros([Nx,Ny,Ny],dtype=np.float32)
+		for ss in range(Nx):
+			recon[ss,] = self.tomo.get_recon(ss)
+		file.create_datset('aligned_recon',data=recon,dtype=np.float32)
+		file.close()

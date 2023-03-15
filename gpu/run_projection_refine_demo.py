@@ -64,12 +64,4 @@ for jj in range(len(binning)):
     tomoAlign.angles = theta
 
 print('Finished Alignments, Saving Data..')
-
-# Save the Aligned Projections, Shifts, and Reconstruciton
-file = h5py.File(params['filename'], 'a')
-paramGroup = file.create_group('params')
-for key,item in params.items():
-    paramGroup.attrs[key] = item
-file.create_dataset('aligned_proj', data=tomoAlign.sinogram_shifted)
-file.create_dataset('aligned_shifts', data=shift)
-file.close()
+tomoAlign.save_alignment_results(shift,params)

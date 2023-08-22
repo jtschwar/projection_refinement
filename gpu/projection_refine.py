@@ -1,5 +1,5 @@
 from pytvlib import initialize_algorithm, run
-from pyqtgraph.Qt import QtCore, QtGui
+from pyqtgraph.Qt import QtWidgets
 import pyqtgraph as pg
 from scipy import signal
 from tqdm import tqdm
@@ -197,7 +197,7 @@ class tomo_align:
 
 	def initialize_plot(self):
 
-		self.app = QtGui.QApplication([])
+		self.app = QtWidgets.QApplication([])
 
 		self.win = pg.GraphicsLayoutWidget(show=True)
 		self.win.resize(1000,600)

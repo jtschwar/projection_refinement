@@ -6,8 +6,12 @@ from tqdm import tqdm
 import astra_ctvlib
 import numpy as np
 
-#import shifts_gpu
-#import shifts_cpu
+from . import shifts_gpu
+from . import shifts_cpu
+
+from . import refinements_gpu
+from . import refinements_cpu
+
 
 class tomo_align:
 
@@ -27,11 +31,11 @@ class tomo_align:
 
 		if self.use_gpu:
 			#np.any([ii // binFactor > 8 for ii in self.sinogram.shape[:2]]):
-			shifts = shifts_gpu
+			shifts = tomoTV_align.shifts_gpu
 			use_gpu = True
 			print('Using GPU')
 		else:
-			shifts =  shifts_cpu
+			shifts =  tomoTV_align.shifts_cpu
 			use_gpu = False
 			print('Using CPU')
 
@@ -73,8 +77,8 @@ class tomo_align:
 		geom = {'tilt_angle':0, 'skewness_angle':0}
 
 		# Class for Calculating Projection Refinements
-		if use_gpu: import refinements_gpu as refinements
-		else: import refinements_cpu as refinements
+		if self.use_gpu: refinements = refinements_gpu
+		else: refinements = refinements_cpu
 		calcRefine = refinements.refinements(params)
 
 		# Main Loop

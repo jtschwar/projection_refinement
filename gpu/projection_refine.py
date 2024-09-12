@@ -1,6 +1,6 @@
 from pytvlib import initialize_algorithm, run
-from pyqtgraph.Qt import QtWidgets
-import pyqtgraph as pg
+#from pyqtgraph.Qt import QtWidgets
+#import pyqtgraph as pg
 from scipy import signal
 from tqdm import tqdm
 import astra_ctvlib
@@ -16,16 +16,20 @@ class tomo_align:
 	def tomo_consistency_linear(self, optimal_shift, params):
 		print('[align] : Starting align_tomo_consistency_linear')
 
-		# Debugger
-		# import pdb; pdb.set_trace()
-
 		interp_sign = -1
 		binFactor = params['binning']
 		Nangles = self.angles.shape[0]
 		print('[align] : Shifting Sinograms and binning = ' + str(binFactor))
 
-		if np.any(self.sinogram.shape[:2] // binFactor > 128): import shifts_gpu as shifts; use_gpu = True
-		else: import shifts_cpu as shifts; use_gpu = False
+		if True:
+		    #np.any([ii // binFactor > 8 for ii in self.sinogram.shape[:2]]):
+		    import shifts_gpu as shifts
+		    use_gpu = True
+		    print('Using GPU')
+		else:
+		    import shifts_cpu as shifts
+		    use_gpu = False
+		    print('Using CPU')
 
 		# Shift to the Last Optimal Position + Remove Edge Issues (Line: 235) + Downsample data
 		linearShifts = shifts.shifts()

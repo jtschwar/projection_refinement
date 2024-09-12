@@ -6,8 +6,8 @@ from tqdm import tqdm
 import astra_ctvlib
 import numpy as np
 
-import shifts_gpu
-import shifts_cpu
+#import shifts_gpu
+#import shifts_cpu
 
 class tomo_align:
 
@@ -15,7 +15,8 @@ class tomo_align:
 		self.sinogram = input_sino
 		self.angles = input_angles
 		#self.weights = input_weights
-                self.use_gpu = use_gpu
+		self.use_gpu = use_gpu
+
 	def tomo_consistency_linear(self, optimal_shift, params):
 		print('[align] : Starting align_tomo_consistency_linear')
 
@@ -25,14 +26,14 @@ class tomo_align:
 		print('[align] : Shifting Sinograms and binning = ' + str(binFactor))
 
 		if self.use_gpu:
-		    #np.any([ii // binFactor > 8 for ii in self.sinogram.shape[:2]]):
-		    shifts = shifts_gpu
-		    use_gpu = True
-		    print('Using GPU')
+			#np.any([ii // binFactor > 8 for ii in self.sinogram.shape[:2]]):
+			shifts = shifts_gpu
+			use_gpu = True
+			print('Using GPU')
 		else:
-		    shifts =  shifts_cpu
-		    use_gpu = False
-		    print('Using CPU')
+			shifts =  shifts_cpu
+			use_gpu = False
+			print('Using CPU')
 
 		# Shift to the Last Optimal Position + Remove Edge Issues (Line: 235) + Downsample data
 		linearShifts = shifts.shifts()

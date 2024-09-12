@@ -31,11 +31,11 @@ class tomo_align:
 
 		if self.use_gpu:
 			#np.any([ii // binFactor > 8 for ii in self.sinogram.shape[:2]]):
-			shifts = tomoTV_align.shifts_gpu
+			shifts = shifts_gpu
 			use_gpu = True
 			print('Using GPU')
 		else:
-			shifts =  tomoTV_align.shifts_cpu
+			shifts =  shifts_cpu
 			use_gpu = False
 			print('Using CPU')
 

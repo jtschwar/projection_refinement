@@ -8,6 +8,12 @@ import h5py
 
 ######################################################################
 # Input sinogram data, tilt angles, and cropping
+# Tilt axis should be vertical (unverified!)
+# This should show sinograms:
+#   fg,ax = plt.subplots(1,2)
+#   ax[0].imshow(dd.sum(axis=0))
+#   ax[1].imshow(dd[120,:,:])
+print('WARNING: Need to verify the tilt axis orientation')
 
 fileName = Path('/mnt/nvme1/microED/uio66_tomo/uio66_tomo2_tomviz.emd')
 tilts_file = Path('/mnt/nvme1/microED/uio66_tomo/uio66_tomo2_angles.txt')
@@ -34,7 +40,9 @@ params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filte
 params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':True})
 params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoothing':False, 'ROI':object_ROI.astype(int)})
 params.update({'showsorted':True,'plot_results':False, 'plot_results_every':5, 'use_gpu':True})
-params.update({'filename':outputFname,'alg':'SART','initAlg':'sequential'})
+#params.update({'alg':'SART', 'initAlg':'sequential'})
+params.update({'alg':'FBP', 'initAlg':'ram-lak'})
+params.update({'filename':outputFname})
 
 binning = np.array([16, 8, 4, 2, 1], dtype=int)
 
@@ -60,10 +68,13 @@ for jj in range(len(binning)):
 print('Finished Alignments, Saving Data..')
 
 # Save the Aligned Projections, Shifts, and Reconstruciton
-with h5py.File(params['filename'], 'a') as f2:
+with h5py.File(params['filename'], 'w') as f2:
     paramGroup = f2.create_group('params')
     for key,item in params.items():
-        paramGroup.attrs[key] = item
+        try:
+            paramGroup.attrs[key] = item
+        except:
+            print(key, item)
     f2.create_dataset('aligned_proj', data=tomoAlign.sinogram_shifted)
     f2.create_dataset('aligned_shifts', data=shift)
 print(f'Data saved to {params["filename"]}')

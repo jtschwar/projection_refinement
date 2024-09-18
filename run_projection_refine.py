@@ -36,7 +36,7 @@ object_ROI = np.array([490,620,0,Ny])
 ######################################################################
 # Useful uning parameters
 # lamino_angle is the tilt axis angle
-params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filter':0.001i, 'step_relaxation':0.1, 'use_gpu':True}
+params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filter':0.001, 'step_relaxation':0.1, 'use_gpu':True}
 params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':False})
 params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoothing':False, 'ROI':object_ROI.astype(int)})
 params.update({'showsorted':True,'plot_results':False, 'plot_results_every':5})

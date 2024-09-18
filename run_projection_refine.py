@@ -83,3 +83,7 @@ print(f'Data saved to {params["filename"]}')
 # img, shift, smooth, ROI, downsample (1=none), interp_sign(method; 1=linear, ignored)
 linear_shifts = tomoTV_align.shifts_gpu.shifts()
 aligned = linear_shifts.imshift_generic(sinogram, shift, 5, np.array([0,Nx,0,Ny]), 1, -1)
+
+# Temp...quickly save as NP file to check. 
+# TODO Use HDF5 file above
+np.save(outputFname.with_suffix('.np'), aligned)

@@ -15,9 +15,9 @@ import h5py
 #   ax[1].imshow(dd[120,:,:])
 print('WARNING: Need to verify the tilt axis orientation')
 
-fileName = Path('/mnt/nvme1/microED/uio66_tomo/uio66_tomo2_tomviz.emd')
-tilts_file = Path('/mnt/nvme1/microED/uio66_tomo/uio66_tomo2_angles.txt')
-outputFname = fileName.with_name('iuo66_tomo_recon.h5')
+fileName = Path('/mnt/nvme1/percius/microED/uio66_tomo/uio66_tomo2_tomviz.emd')
+tilts_file = Path('/mnt/nvme1/percius/microED/uio66_tomo/uio66_tomo2_angles.txt')
+outputFname = fileName.with_name('uio66_tomo_aligned.h5')
 
 with h5py.File(fileName,'r') as f0:
     sinogram = f0['data/converted/data'][:]
@@ -67,6 +67,11 @@ for jj in range(len(binning)):
 
 print('Finished Alignments, Saving Data..')
 
+# Apply shifts to the full data set (without cropping)
+# img, shift, smooth, ROI, downsample (1=none), interp_sign(method; 1=linear, ignored)
+linear_shifts = tomoTV_align.shifts_gpu.shifts()
+sinogram_aligned = linear_shifts.imshift_generic(sinogram, shift, 5, np.array([0,Nx,0,Ny]), 1, -1)
+
 # Save the Aligned Projections, Shifts, and Reconstruciton
 with h5py.File(params['filename'], 'w') as f2:
     paramGroup = f2.create_group('params')
@@ -75,15 +80,15 @@ with h5py.File(params['filename'], 'w') as f2:
             paramGroup.attrs[key] = item
         except:
             print(key, item)
-    f2.create_dataset('aligned_proj', data=tomoAlign.sinogram_shifted)
-    f2.create_dataset('aligned_shifts', data=shift)
+    f2.create_dataset('aligned', data=sinogram_aligned)
+    f2.create_dataset('shifts', data=shift)
 print(f'Data saved to {params["filename"]}')
 
 # Apply shifts to the full data set (without cropping)
 # img, shift, smooth, ROI, downsample (1=none), interp_sign(method; 1=linear, ignored)
-linear_shifts = tomoTV_align.shifts_gpu.shifts()
-aligned = linear_shifts.imshift_generic(sinogram, shift, 5, np.array([0,Nx,0,Ny]), 1, -1)
+#linear_shifts = tomoTV_align.shifts_gpu.shifts()
+#aligned = linear_shifts.imshift_generic(sinogram, shift, 5, np.array([0,Nx,0,Ny]), 1, -1)
 
 # Temp...quickly save as NP file to check. 
 # TODO Use HDF5 file above
-np.save(outputFname.with_suffix('.np'), aligned)
+#np.save(outputFname.with_suffix('.np'), aligned)

@@ -14,17 +14,73 @@ from . import refinements_cpu
 
 
 class tomo_align:
+	""" Use self consistency of a reconstruction to align tomogrpahic projections
+	
+        Attributes
+        ---------
+        sinogram : np.ndarray
+        	The tomographic tilt series as (X, Y, num)
+        angles : np.ndarray
+        	The projection angles in degrees
+        use_gpu : bool
+        	Indicates to use GPU processing for reconstruction and image shifting.
+                Default is True.
 
+        """
 	def __init__(self, input_sino, input_angles, use_gpu=True):
+		"""
+                Paremeters
+                ----------
+                input_sino : np.ndarray
+                	The tomographic tilt series as (X, Y, num).
+        	input_angles : np.ndarray
+                	The projection angles in degrees.
+        	use_gpu : bool
+                	Indicates to use GPU processing for reconstruction and image shifting.
+                	Default is True.
+
+                """
+            	
 		self.sinogram = input_sino
 		self.angles = input_angles
 		#self.weights = input_weights
 		self.use_gpu = use_gpu
 
 	def tomo_consistency_linear(self, optimal_shift, params):
+		""" ALign a set of projections based on consistency in the reconstruction
+
+                Parameters
+                ----------
+                optimal_shift : np.ndarray
+                	The shifts to start from.
+                params : dict
+                        A dicitonary of parameters. Available parameters are:
+                        binning : tuple
+                        min_step_size : float
+                        max_iter : int
+                        use_TV : bool
+                        high_pass_filter : float
+                        step_relaxation : float
+                        use_gpu : bool (not used)
+                        tilt_angle : float
+                        momentum_acceleration : bool
+                        apply_positivity : bool
+                        refine_geometry : bool
+                        filter_type : str (for WB recon)
+                        lamino_angle : float
+                        position_update_smoothing : bool
+                        ROI : tuple (NX_start, NX_end, NY_start, NY_end)
+                        showsorted : bool
+                        plot_results : bool
+                        plot_results_every : int
+                        alg : str (SART or FBP)
+                        initAlg : str
+                        filename : str (not used)
+
+                """
 		print('[align] : Starting align_tomo_consistency_linear')
 
-		interp_sign = -1
+		interp_sign = -1 # indicates whether to use interpolation or not
 		binFactor = params['binning']
 		Nangles = self.angles.shape[0]
 		print('[align] : Shifting Sinograms and binning = ' + str(binFactor))

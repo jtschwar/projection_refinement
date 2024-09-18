@@ -13,7 +13,6 @@ import h5py
 #   fg,ax = plt.subplots(1,2)
 #   ax[0].imshow(dd.sum(axis=0))
 #   ax[1].imshow(dd[120,:,:])
-print('WARNING: Need to verify the tilt axis orientation')
 
 fileName = Path('/mnt/nvme1/percius/microED/uio66_tomo/uio66_tomo2_tomviz.emd')
 tilts_file = Path('/mnt/nvme1/percius/microED/uio66_tomo/uio66_tomo2_angles.txt')
@@ -40,8 +39,8 @@ params = {'min_step_size':0.01, 'max_iter':500, 'use_TV':False, 'high_pass_filte
 params.update({'tilt_angle':0, 'momentum_acceleration':False, 'apply_positivity':True, 'refine_geometry':False})
 params.update({'filter_type':'ram-lak', 'lamino_angle':90, 'position_update_smoothing':False, 'ROI':object_ROI.astype(int)})
 params.update({'showsorted':True,'plot_results':False, 'plot_results_every':5})
-#params.update({'alg':'SART', 'initAlg':'sequential'})
-params.update({'alg':'FBP', 'initAlg':'ram-lak'})
+#params.update({'alg':'SART', 'initAlg':'sequential'}) # accurate and better with missing wedge; slower
+params.update({'alg':'FBP', 'initAlg':'ram-lak'}) # much faster but worse with large missing wedge
 params.update({'filename':outputFname})
 
 binning = np.array([16, 8, 4, 2, 1], dtype=int)

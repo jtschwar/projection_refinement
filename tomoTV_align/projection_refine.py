@@ -164,7 +164,7 @@ class tomo_align:
 			if max_update * binFactor < params['min_step_size']: break
 
 		# Save the Final Reconstruction and Aligned Tilt Series
-		if binFactor == 1: tomo.save_recon(params['filename'])
+		#if binFactor == 1: tomo.save_recon(params['filename'])
 		self.sinogram_shifted = sinogram_shifted
 
 		# Prepare outputs to be returned

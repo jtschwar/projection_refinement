@@ -9,7 +9,6 @@ from os import path
 
 from setuptools import setup , find_packages
 
-
 # To use a consistent encoding
 here = path.abspath(path.dirname(__file__))
 
@@ -25,7 +24,7 @@ setup(
     long_description='tomoTV Iterative alignment of tomogrpahic tilt series',
 
     # The project's main homepage.
-    url='https://github.com/',
+    url='https://github.com/jtschwar/projection_refinement',
 
     # Author details
     author='J. Schwartz, P. Ercius',
@@ -73,14 +72,15 @@ setup(
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
 
-    install_requires=['numpy', 'scipy', 'matplotlib', 'h5py>=3'],
+    install_requires=['numpy', 'scipy', 'matplotlib', 'h5py>=3', 'tqdm', 'scikit-image'],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
     # for example:
-    # $ pip install -e .[dev,test]
-    #extras_require={
-    #},
+    # $ pip install -e .[gui]
+    extras_require={
+         'gui': ['PyQt5', 'pyqtgraph'],  # GUI libraries
+    },
 
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these
@@ -99,9 +99,9 @@ setup(
     # To provide executable scripts, use entry points in preference to the
     # "scripts" keyword. Entry points provide cross-platform support and allow
     # pip to create the appropriate form of executable for the target platform.
-    #entry_points={
-    #    'console_scripts': [
-    #        'ncem2png=ncempy.command_line.ncem2png:main',
-    #    ],
-    #},
+    entry_points={
+       'console_scripts': [
+           'data_viewer=tomoTV_align.view_data_3d:sliceZ',
+       ],
+    },
 )

@@ -129,7 +129,7 @@ class refinements:
     # filtering is used for suppresion of low spatial freq. errors 
     def get_img_grad_filtered(self, img, axis, high_pass_filter, smooth_win):
 
-        linearShifts = shifts.shifts()
+        linearShifts = shifts()
 
         img = linearShifts.smooth_edges(img, smooth_win, axis%2)
         isReal = cu.all(cu.isreal(img))

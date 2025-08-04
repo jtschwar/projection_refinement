@@ -1,5 +1,5 @@
 from cupy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
-from . import shifts_gpu as shifts
+from tomoalign.shifts_gpu import shifts
 import numpy as np
 import cupy as cu
 

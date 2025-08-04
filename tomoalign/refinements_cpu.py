@@ -1,5 +1,5 @@
 from numpy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
-from . import shifts_cpu as shifts
+from tomoalign.shifts_cpu import shifts
 import numpy as np
 
 class refinements:

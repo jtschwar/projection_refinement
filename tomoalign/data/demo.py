@@ -11,4 +11,3 @@ def load_demo():
 
     return sinogram, theta
 
-

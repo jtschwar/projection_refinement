@@ -1,5 +1,5 @@
 from cupy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
-from . import shifts_gpu as shifts
+from tomoalign import shifts_gpu as shifts
 import numpy as np
 import cupy as cu
 
@@ -251,4 +251,3 @@ class refinements:
             shift[:,jj] = (1-gain) * shift[:,jj]  + gain * velocity_map[:,jj]
 
         return (shift, velocity_map)
-

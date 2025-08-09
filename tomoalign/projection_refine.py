@@ -7,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-class tomo_align:
+class ProjectionMatcher:
 	""" Use self consistency of a reconstruction to align tomogrpahic projections
 	
         Attributes
@@ -78,13 +78,13 @@ class tomo_align:
 		print('[align] : Shifting Sinograms and binning = ' + str(binFactor))
 
 		if np.any( np.array(self.sinogram.shape[:2]) // binFactor > 128) and params['use_gpu']:
-			import tomoTV_align.shifts_gpu as shifts
+			import tomoalign.shifts_gpu as shifts
 			use_gpu = True
-			print('Using GPU')
+			print('Using GPU for shifts')
 		else:
-			import tomoTV_align.shifts_gpu as shifts
+			import tomoalign.shifts_gpu as shifts
 			use_gpu = False			
-			print('Using CPU')
+			print('Using CPU for shifts')
 
 		# Shift to the Last Optimal Position + Remove Edge Issues (Line: 235) + Downsample data
 		linearShifts = shifts.shifts()
@@ -113,7 +113,7 @@ class tomo_align:
 		b = np.zeros([Nlayers, width_sinogram*Nangles])
 		sinogram_model = np.zeros([Nlayers, width_sinogram, Nangles])
 
-		tomo = astra_ctvlib.astra_ctvlib(Nlayers,width_sinogram, np.deg2rad(self.angles))
+		tomo = tomoengine(Nlayers,width_sinogram, np.deg2rad(self.angles))
 		initialize_algorithm(tomo, params['alg'], params['initAlg'])
 		tomo.restart_recon()
 
@@ -228,7 +228,9 @@ class tomo_align:
 			self.viz.initialize_plot()
 		except:
 			params['plot_results'] = False
-			print("Skipping visualization since 'pyqtgraph' is unavailable.")
+			print(f"\nSkipping visualization since 'pyqtgraph' is unavailable.")
+			print(f"For those that would like to see intermediate results with the GUI, "
+					"re-build the package with `pip install -e \".[gui]\"`\n")			
 		return params		
 
 	def smooth(self, signal, window_len):

@@ -1,9 +1,7 @@
+import tomoalign, h5py, os
 from pathlib import Path
 import scipy.io as sio
-import tomoalign
 import numpy as np
-import h5py
-import os
 
 class AlignmentWorkflow:
     """
@@ -60,6 +58,9 @@ class AlignmentWorkflow:
             'initAlg': 'ram-lak',
             'filename': 'tmp.h5'
         }
+
+        # Results should start off as empty
+        self.results = None
         
     def run(self, binning_factors=[4,2,1]):
         """
@@ -71,7 +72,7 @@ class AlignmentWorkflow:
         """
 
         # Display the current parameters
-        print('Current Parameters:')
+        print(f'\nCurrent Parameters:')
         for key, value in self.params.items():
             print(f'  {key}: {value}')
 
@@ -89,7 +90,7 @@ class AlignmentWorkflow:
             
         # Multi-scale alignment loop
         for curr_bin in self.binning_factors:
-            print(f"Processing with binning factor: {curr_bin}")
+            print(f"\nProcessing with binning factor: {curr_bin}")
             
             # Self-consistency based alignment procedure
             self.params['binning'] = curr_bin
@@ -98,14 +99,14 @@ class AlignmentWorkflow:
             self.tomo_align.angles = self.theta
             
         print('Finished Alignments')
-        
-        return {
+
+        self.results = {
             'aligned_sinogram': self.tomo_align.sinogram_shifted,
             'shifts': self.shift,
             'parameters': self.params
         }
         
-    def save_results(self, results=None):
+    def save(self, output_file='aligned.h5'):
         """
         Save aligned projections, shifts, and reconstruction parameters to H5 file.
         
@@ -114,24 +115,24 @@ class AlignmentWorkflow:
         results : dict, optional
             Results dictionary from run_alignment(). If None, uses internal state.
         """
-        if results is None:
+        # Check to see if alignments were ran
+        if self.results is None:
             if self.tomo_align is None or self.shift is None:
-                raise ValueError("No results to save. Run alignment first or provide results dictionary.")
-            aligned_proj = self.tomo_align.sinogram_shifted
-            shifts = self.shift
-            params = self.params
+                raise ValueError("No results to save. Run alignment first.")
         else:
-            aligned_proj = results['aligned_sinogram']
-            shifts = results['shifts']
-            params = results['parameters']
-            
+            aligned_proj = self.results['aligned_sinogram']
+            shifts = self.results['shifts']
+            params = self.results['parameters']
+
         # Determine file mode
-        save_h5flag = 'w' if self.output_file.exists() else 'a'
-        if self.output_file.exists():
-            print(f"{self.output_file} already exists, overwriting current H5 File")
+        if os.path.isfile(output_file):
+            save_h5flag = 'w'
+            print(f"{output_file} already exists, overwriting current H5 File")
+        else:
+            save_h5flag = 'a'
             
         # Save data
-        with h5py.File(self.output_file, save_h5flag) as f2:
+        with h5py.File(output_file, save_h5flag) as f2:
             # Save parameters as attributes
             param_group = f2.create_group('params')
             for key, item in params.items():
@@ -145,6 +146,4 @@ class AlignmentWorkflow:
             f2.create_dataset('aligned_proj', data=aligned_proj)
             f2.create_dataset('aligned_shifts', data=shifts)
             
-        print(f'Data saved to {self.output_file}')
-        
-    
+        print(f'Data saved to {output_file}')

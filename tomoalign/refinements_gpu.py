@@ -1,254 +1,243 @@
-from cupy.fft import fft, ifft, fft2, ifft2, fftshift, ifftshift
+from tomofusion.gpu.utils.pytvlib import initialize_algorithm, run
+from tomoalign import refinements_gpu, refinements_cpu
+from tomofusion.gpu.utils import tomoengine
 from tomoalign.shifts_gpu import shifts
+from scipy import signal
+from tqdm import tqdm
 import numpy as np
-import cupy as cu
 
-class refinements:
 
-    def __init__(self,params):
-        self.par = params
-        
-## --------------------------------------------------------------------------------------------------------
+class ProjectionMatcher:
+	""" Use self consistency of a reconstruction to align tomogrpahic projections
+	
+        Attributes
+        ---------
+        sinogram : np.ndarray
+        	The tomographic tilt series as (X, Y, num)
+        angles : np.ndarray
+        	The projection angles in degrees
+        use_gpu : bool
+        	Indicates to use GPU processing for reconstruction and image shifting.
+                Default is True.
+        """
+	def __init__(self, input_sino, input_angles, use_gpu=True):
+		"""
+		Paremeters
+		----------
+		input_sino : np.ndarray
+			The tomographic tilt series as (X, Y, num).
+		input_angles : np.ndarray
+				The projection angles in degrees.
+		use_gpu : bool
+				Indicates to use GPU processing for reconstruction and image shifting.
+				Default is True.
+		"""
+            	
+		self.sinogram = input_sino
+		self.angles = input_angles
+		#self.weights = input_weights
+		# self.use_gpu = use_gpu
+
+	def tomo_consistency_linear(self, optimal_shift, params):
+		""" ALign a set of projections based on consistency in the reconstruction
+
+                Parameters
+                ----------
+                optimal_shift : np.ndarray
+                	The shifts to start from.
+                params : dict
+                        A dicitonary of parameters. Available parameters are:
+                        binning : tuple
+                        min_step_size : float
+                        max_iter : int
+                        use_TV : bool
+                        high_pass_filter : float
+                        step_relaxation : float
+                        use_gpu : bool (not used)
+                        tilt_angle : float
+                        momentum_acceleration : bool
+                        apply_positivity : bool
+                        refine_geometry : bool
+                        filter_type : str (for WB recon)
+                        lamino_angle : float
+                        position_update_smoothing : bool
+                        ROI : tuple (NX_start, NX_end, NY_start, NY_end)
+                        showsorted : bool
+                        plot_results : bool
+                        plot_results_every : int
+                        alg : str (SART or FBP)
+                        initAlg : str
+                        filename : str (not used)
+
+        """
+		print('[align] : Starting align_tomo_consistency_linear')
+
+		interp_sign = -1 # indicates whether to use interpolation or not
+		binFactor = params['binning']
+		Nangles = self.angles.shape[0]
+		print('[align] : Shifting Sinograms and binning = ' + str(binFactor))
+
+		if np.any( np.array(self.sinogram.shape[:2]) // binFactor > 128) and params['use_gpu']:
+			import tomoalign.shifts_gpu as shifts
+			use_gpu = True
+			print('Using GPU for shifts')
+		else:
+			import tomoalign.shifts_gpu as shifts
+			use_gpu = False			
+			print('Using CPU for shifts')
+
+		# Shift to the Last Optimal Position + Remove Edge Issues (Line: 235) + Downsample data
+		linearShifts = shifts.shifts()
+		self.sinogram = linearShifts.imshift_generic(self.sinogram, optimal_shift, 5, params['ROI'], binFactor, interp_sign)
+		print('Sinogram Shape: ' + str(self.sinogram.shape))
+
+		# Sort by angle if requested, but only after binning to make it faster
+		if params['showsorted']:
+			ang_order = np.argsort(self.angles)
+			self.sinogram = self.sinogram[:,:,ang_order]
+			self.angles = self.angles[ang_order]
+			optimal_shift = optimal_shift[ang_order,:]
+		else:
+			ang_order = np.arange(Nangles)
+
+		# Prepare some Auxiliary Variables
+		(Nlayers,width_sinogram) = self.sinogram.shape[:2]
+
+		shift_upd_all = np.zeros([params['max_iter'],Nangles,2], dtype=np.float32)
+		shift_velocity =  np.zeros([Nangles,2], dtype=np.float32)
+		shift_total =  np.zeros([Nangles,2], dtype=np.float32) 			#total update of the optimal shifts
+		err = np.zeros([params['max_iter'], Nangles], dtype=np.float32) #error evolution 
+
+		# Initialize ASTRA FBP
+		# Determine the optimal size based on downsampled sinogram
+		b = np.zeros([Nlayers, width_sinogram*Nangles])
+		sinogram_model = np.zeros([Nlayers, width_sinogram, Nangles])
+
+		tomo = tomoengine(Nlayers,width_sinogram, np.deg2rad(self.angles))
+		initialize_algorithm(tomo, params['alg'], params['initAlg'])
+		tomo.restart_recon()
+
+		# geometry parameters structure 
+		geom = {'tilt_angle':0, 'skewness_angle':0}
 
-    def refine_geometry(self, sinogram_measured, sino_model, geom, iter):
+		# Class for Calculating Projection Refinements
+		if use_gpu: refinements = refinements_gpu
+		else: 		refinements = refinements_cpu
+		calcRefine = refinements.refinements(params)
 
-        # Debugger
-        # import pdb; pdb.set_trace()
+		# Main Loop
+		for ii in tqdm(range(params['max_iter'])):
+
+			#step 1: shift (downsampled) sinogram (Line: 371) 
+			sinogram_shifted = self.sinogram
+
+			# geom_mat = [scale, rotation, shear]
+			if hasattr(params['tilt_angle'],"__len__"):
+				geom_mat = np.array([np.ones((Nangles)), params['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])				
+			else: # load original rotations if available
+				geom_mat = np.array([np.ones((Nangles)), np.ones((Nangles)) * -geom['tilt_angle'], np.ones((Nangles)) * -geom['skewness_angle']])				
+			# geom_mat = np.array([np.ones((Nangles)), params['refine_mask'] * -geom['tilt_angle'], params['refine_mask'] * -geom['skewness_angle']])
+			sinogram_shifted = linearShifts.imdeform_affine_fft(sinogram_shifted, geom_mat , shift_total)
+
+			if ii == 0: mass = np.median(np.mean(np.abs(sinogram_shifted),axis=(0,1)))
+
+			#step 2: tomo recon (using ASTRA)    
+			for s in range(Nlayers):
+				b[s,:] = sinogram_shifted[s,:,:].transpose().ravel()
+			tomo.set_tilt_series(b)
+			run(tomo, params['alg'])
+
+			#optional step: regularization
+			if params['use_TV']: tomo.tv_gd(20, 0.1)
+
+			#step 3: get reprojections from current tomogram (using ASTRA) (Line 455)
+			tomo.forward_projection()
+
+			reproj = tomo.get_model_projections()
+			for s in range(Nangles):
+				sinogram_model[:,:,s] = reproj[:,s*width_sinogram:(s+1)*width_sinogram]
+
+			# Refine Geometry (ie tilt_angle & shear) (Line 482)
+			if params['refine_geometry']:
+				geom = calcRefine.refine_geometry(sinogram_shifted, sinogram_model, geom, ii)
+
+			#step 4: calculate updated shifts from sinogram and sinogram_model (Line 494 & 884)
+			(shift_upd, err[ii,:]) = calcRefine.find_optimal_shift(sinogram_model, sinogram_shifted, mass)
+
+			# Do not allow more than 0.5px per iteration (Line 502)
+			shift_upd = np.minimum(0.5, np.abs(shift_upd)) * np.sign(shift_upd) * params['step_relaxation']
+
+			# Store update history for momentum gradient acceleration
+			shift_upd_all[ii,] = shift_upd
+
+			#step 4.5: add momentum acceleration to improve convergence
+			#optional step: add smoothing to shifts to prevent trapping at the local solutions
+			if params['momentum_acceleration']:
+				momentum_memory = 2
+				max_update = np.quantile(np.abs(shift_upd), 0.995, axis=0)
+				if ii >= momentum_memory:
+					(shift_upd, shift_velocity) = calcRefine.add_momentum(shift_upd_all[ii-momentum_memory:ii,:,:], shift_velocity, max_update * binFactor < 0.5 )
+
+			shift_upd[:,1] = shift_upd[:,1] - np.median(shift_upd[:,1])
+
+			# Prevent outliers when the code decides to quickly oscillate around the solution 
+			max_step = np.minimum(np.quantile(np.abs(shift_upd),0.99, axis=0), 0.5)
+
+			# Do not allow more than 0.5px per iteration (multiplied by binning factor)
+			shift_upd = np.minimum(max_step, np.abs(shift_upd)) * np.sign(shift_upd)
+
+			#step 5: update total position shift
+			shift_total += shift_upd
+
+			# Enforce smoothness of the estimate position update -> in each iteration 
+			# smooth the accumlated position udate, this helps against discontinuites 
+			# in the update (Line: 558) (TODO)
+			if params['position_update_smoothing']:
+				for kk in range(2):
+					shift_total[:,kk] = self.smooth(shift_total[:,kk], np.maximum(0, np.minimum(1, params['position_update_smoothing'])) * Nangles); 
+
+			# # Plot results (Line 572)
+			if params['plot_results'] and (ii % params['plot_results_every'] == 0):
+				recSlice = tomo.get_recon(int(Nlayers//2))
+				sinoSlice = sinogram_shifted[int(Nlayers//2),]
+				self.viz.plot_alignment(recSlice, sinoSlice, err, shift_upd, shift_total, self.angles, params, ii)
+				self.viz.removeImageItems()
+
+			# Check for Maximal Update
+			max_update = np.max( np.quantile(np.abs(shift_upd), 0.995, axis=0) )
+			if max_update * binFactor < params['min_step_size']: break
+
+		# Save the Final Reconstruction and Aligned Tilt Series
+		self.sinogram_shifted = sinogram_shifted
+
+		# Prepare outputs to be returned
+		params['tilt_angle']     = params['tilt_angle'] + geom['tilt_angle']
+		params['skewness_angle'] = params['tilt_angle'] + geom['skewness_angle']
+
+		# vertical offset is a degree of freedom => minimize of offset 
+		shift_total[:,1] = shift_total[:,1] - np.median(shift_total[:,1]) 
+
+		optimal_shift[ang_order,:] = optimal_shift + shift_total * binFactor
+
+		return (optimal_shift, params)
+
+	def initialize_plot(self, params):
+		try: 
+			from . import gui
+			self.viz = gui.visualize(self)
+			self.viz.initialize_plot()
+		except:
+			params['plot_results'] = False
+			print(f"\nSkipping visualization since 'pyqtgraph' is unavailable.")
+			print(f"For those that would like to see intermediate results with the GUI, "
+					"re-build the package with `pip install -e \".[gui]\"`\n")			
+		return params		
+
+	def smooth(self, signal, window_len):
+#		if signal.size < window_len:
+#			raise ValueError, "Input vector needs to be bigger than window size."
+		w = np.ones(window_len)
+		return np.convolve(w/w.sum(),s,mode='valid')
 
-        sinogram_measured = cu.array(sinogram_measured)
-        sino_model = cu.array(sino_model)
 
-        # if iter == 0:
-        #     geometry_corr = cu.array([ np.mean(self.par['lamino_angle']), np.mean(geom['tilt_angle']), np.mean(geom['skewness_angle']) ])
- 
-        resid_sino = self.get_resid_sino(sino_model,sinogram_measured, self.par['high_pass_filter'],1)
-
-        step_relation = 0.01
-        (dX, dY) = self.get_img_grad(sino_model)
-
-        # get tilt angle correction
-        Dvec = dX * cu.linspace(-1,1,dX.shape[0]).reshape(dX.shape[0],1,1) - dY * cu.linspace(-1,1,dY.shape[1]).reshape(1,dX.shape[1],1)
-        optimal_shift = self.get_GD_update(Dvec, resid_sino, self.par['high_pass_filter'])
-        geom['tilt_angle'] = geom['tilt_angle'] + step_relation * np.rad2deg(optimal_shift) 
-
-        # get shear gradient
-        Dvec = dY * cu.linspace(-1,1,dY.shape[1]).reshape(1,dX.shape[1],1)
-        optimal_shift = self.get_GD_update(Dvec, resid_sino, self.par['high_pass_filter'])
-        geom['skewness_angle'] = geom['skewness_angle'] + step_relation * np.rad2deg(optimal_shift)
-
-        return geom
-
-## --------------------------------------------------------------------------------------------------------
-
-    # Calculate the optimal step length for optical flow based
-    # image alignment
-    def get_GD_update(self, dX, resid, filter):
-
-        dX = self.imfilter_high_pass_1d(dX, 1, filter, True)
-        optimal_shift = cu.sum(resid * dX, axis=(0,1)) / cu.sum(dX**2, axis=(0,1))
-
-        return cu.asnumpy(optimal_shift)
-
-## --------------------------------------------------------------------------------------------------------
-
-    # Get vertical and horizontal gradient of image using FFT
-    def get_img_grad(self, img):
-    # Inputs:
-    #   **img   - stack of images 
-    #   **axis  - direction of the derivative 
-    # *returns*
-    #  ++[dX, dY]  - image gradients 
-
-        isReal = cu.all(cu.isreal(img))
-        Np = img.shape
-
-        X = 2 * (1j) * cu.pi * ifftshift( cu.arange(-np.floor(Np[1]/2), np.ceil(Np[1]/2)) ) / Np[1]
-        dX = fft(img, axis = 1) * X.reshape(1,Np[1],1)
-        dX = ifft(dX, axis = 1)
-
-        Y = 2 * (1j) * cu.pi * ifftshift( cu.arange(-np.floor(Np[0]/2), np.ceil(Np[0]/2)) ) / Np[0]
-        dY = fft(img, axis = 0) * Y.reshape(Np[0],1,1)
-        dY = ifft(dY, axis = 0)
-
-        if isReal: 
-            dX = cu.real(dX)
-            dY = cu.real(dY)
-
-        return (dX, dY)
-
-## --------------------------------------------------------------------------------------------------------
-
-    # given the sinogram_model, measured sinogram, and importance weight for each pixel it tries to
-    # estimate the most optimal shift betweem sinogram_model and
-    # sinogram to minimize weighted difference || W * (sinogram_model - sinogram + alpha * d(sino)/dX )^2 ||
-    def find_optimal_shift(self, sinogram_model, sinogram, mass):
-
-        sinogram = cu.array(sinogram)
-        sinogram_model = cu.array(sinogram_model)
-
-        shift_x = cu.zeros(sinogram_model.shape[2])
-        shift_y = cu.zeros(sinogram_model.shape[2])
-
-        resid_sino = self.get_resid_sino(sinogram_model, sinogram, self.par['high_pass_filter'],1)
-        resid_sino = self.imfilter_high_pass_1d(resid_sino,1,self.par['high_pass_filter'], True)
-
-        # Align Horizontal
-        dX = self.get_img_grad_filtered(sinogram_model, 0, self.par['high_pass_filter'], 5)
-        dX = self.imfilter_high_pass_1d(dX, 1, self.par['high_pass_filter'], True)
-        shift_x = - cu.sum(dX * resid_sino, axis=(0,1)) / cu.sum(dX**2, axis=(0,1))
-
-        # Align Vertical
-        resid_sino = self.get_resid_sino(sinogram_model, sinogram, self.par['high_pass_filter'],0)
-        dY = self.get_img_grad_filtered(sinogram_model, 1, self.par['high_pass_filter'], 5)
-        dY = self.imfilter_high_pass_1d(dY, 0, self.par['high_pass_filter'], True)
-        shift_y = - cu.sum(dY * resid_sino, axis=(0,1)) / cu.sum(dY**2, axis=(0,1) )
-        
-        shift = cu.array([shift_x, shift_y]).T
-        err = cu.sqrt(cu.mean(resid_sino**2,axis=(0,1))) / mass
-
-        return (cu.asnumpy(shift), cu.asnumpy(err))
-
-## --------------------------------------------------------------------------------------------------------
-
-    # calculate filtered difference between sinogram_model  and sinogram 
-    # || (sinogram_model  - sinogram) \ast ker ||
-    # filtering is used for suppresion of low spatial freq. errors 
-    def get_resid_sino(self, sinogram_model, sinogram, high_pass_filter,axis):
-
-        # Calculate residuum
-        resid_sino = sinogram_model - sinogram
-
-        # Apply high pass filter => get rid of phase artifacts
-        resid_sino = self.imfilter_high_pass_1d(resid_sino, axis, high_pass_filter, True)
-
-        return resid_sino
-
-## --------------------------------------------------------------------------------------------------------
-
-    # calculate filtered image gradient  between sinogram_model  and sinogram 
-    # filtering is used for suppresion of low spatial freq. errors 
-    def get_img_grad_filtered(self, img, axis, high_pass_filter, smooth_win):
-
-        linearShifts = shifts()
-
-        img = linearShifts.smooth_edges(img, smooth_win, axis%2)
-        isReal = cu.all(cu.isreal(img))
-        Np = img.shape
-
-        if axis == 0:
-            X = 2 * (1j) * cu.pi * (fftshift( cu.arange(Np[1])/Np[1] ) - 0.5)
-            d_img = fft(img,axis=1)
-            d_img = d_img * X.reshape(1,Np[1],1)
-
-            # Apply filter in horizontal direction
-            d_img = self.imfilter_high_pass_1d(d_img, 1, high_pass_filter, False)
-            d_img = ifft(d_img, axis=1)
-
-        if axis == 1:
-            X = 2 * (1j) * cu.pi * (fftshift( cu.arange(Np[0])/Np[0] ) - 0.5)
-            d_img = fft2(img, axes=(0,1))
-            d_img = d_img * X.reshape(Np[0],1,1)
-
-            # Apply filter in horizontal direction
-            d_img = self.imfilter_high_pass_1d(d_img, 1, high_pass_filter, False)
-            d_img = ifft2(d_img, axes=(0,1))
-
-        if isReal:
-            img = cu.real(d_img)
-
-        return img
-
-## --------------------------------------------------------------------------------------------------------
-
-    # IMFILTER_HIGH_PASS_1D applies fft filter along AX dimension that
-    # removes SIGMA ratio of the low frequencies 
-    def imfilter_high_pass_1d(self, img, ax, sigma, apply_fft):
-    # Icuuts:
-    #   **img           - ndim filtered image 
-    #   **ax            - filtering axis 
-    #   **sigma         - filtering intensity [0-1 range],  sigma <= 0 no filtering 
-    #   **padding       - pad the array to avoid edge artefacts (in pixels) [default==0]
-    #   **apply_fft     - if true assume that img is in real space, [default == true]
-    # *returns*
-    #   ++img           - highpass filtered image 
-
-        Ndims = len(img.shape)
-        # cu.seterr(divide='ignore', invalid='ignore')
-
-        # padding = cu.ceil(padding)
-
-        # if padding > 0:
-        #   pad_vec = cu.zeros([Ndims,1])
-        #   pad_vec[ax] = padding
-        #   img = cu.pad(img, pad_vec, 'symmetric')
-
-        Npix = img.shape
-        shape = np.ones(Ndims,dtype=int)
-        shape[ax] = Npix[ax]
-        isReal = cu.all(cu.isreal(img))
-
-        if apply_fft:
-            img = fft(img, axis=ax)
-
-        x = cu.arange(-Npix[ax]/2, Npix[ax]/2)/Npix[ax]
-        sigma = 256 / (Npix[ax]) * sigma
-
-        if sigma == 0:
-            # Use Derivative Filter
-            spectral_filter = 2*(1j) * cu.pi * (cu.fft.fftshift( cu.arange(Npix[ax])/Npix[ax] ) - 0.5)
-        else:
-            spectral_filter = fftshift( cu.exp(1/(-x**2/sigma**2))  )  
-
-        img = img * spectral_filter.reshape(shape)
-
-        if apply_fft:
-            img = cu.fft.ifft(img,axis=ax)
-
-        if isReal:
-            img = cu.real(img)
-
-        return img 
-
-## --------------------------------------------------------------------------------------------------------
-
-    # function for accelerated momentum gradient descent. 
-    # the function measured momentum of the subsequent updates and if the
-    # correlation between then is high, it will use this information to
-    # accelerate the update in the direction of average velocity 
-    def add_momentum(self, shifts_memory, velocity_map, acc_axes):
-        
-        shift = shifts_memory[-1,:,:]
-        if np.all(acc_axes==False): return (shift, velocity_map)
-
-        import scipy.optimize as optimize
-
-        Nmem = shifts_memory.shape[0]
-        C = np.zeros(Nmem, dtype=np.float32)
-
-        # apply only for horizontal, vertical seems to be too unstable         
-        for jj in np.where(acc_axes==True)[0]:
-
-            if np.all(shift[:,jj] == 0): continue
-            if jj == 1: continue 
-
-            for ii in range(Nmem):
-                C[ii] = np.correlate(shift[:,jj], shifts_memory[ii,:,jj].T)
-
-            # estimate optimal friction from previous steps 
-            funOptimize = lambda z: np.linalg.norm( C - np.exp(-z * np.arange(Nmem, 1,- 1)))
-            decay = optimize.fmin( funOptimize, 0, disp=False )
-
-            ######################################
-            alpha = 2                                          # scaling of the friction , larger == less memory 
-            gain = 0.5                                         # smaller -> lower relative speed (less momentum)
-            friction = min( 1, max(0,alpha*decay[0]) )         # smaller -> longer memory, more momentum 
-            ######################################
-
-            # update velocity map 
-            velocity_map[:,jj] = (1-friction) * velocity_map[:,jj] + shift[:,jj]
-            
-            # update shift estimates 
-            shift[:,jj] = (1-gain) * shift[:,jj]  + gain * velocity_map[:,jj]
-
-        return (shift, velocity_map)
 

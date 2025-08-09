@@ -16,8 +16,10 @@ To run the alignment script, we simply need to provide the the tilt series and t
 
 ```python
 from tomoalign.aligner import AlignmentWorkflow
+from tomoalign import load_demo
 
 # Initialize the Alignment Class
+(tiltSeries, tiltAngles) = load_demo()
 aligner = AlignmentWorkflow(tiltSeries, tiltAngles)
 
 # We can play with different reconstruction algorithms 
@@ -26,10 +28,10 @@ aligner = AlignmentWorkflow(tiltSeries, tiltAngles)
 # (3) aligner.params['alg'] = 'wbp'; aligner.params['initAlg'] = 'ram-lak'
 
 # Results is a dictionary with the aligned sinogram, measured shifts, and parameters metadata.
-results = aligner.run(binning_factors=[4,2,1])
+aligner.run(binning_factors=[4,2,1])
 
 # Save the Results to the given h5 file name.
-alinger.save('aligned.h5')
+aligner.save('aligned.h5')
 ```
 
 ## References

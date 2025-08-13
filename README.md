@@ -30,6 +30,10 @@ aligner = AlignmentWorkflow(tiltSeries, tiltAngles)
 # Results is a dictionary with the aligned sinogram, measured shifts, and parameters metadata.
 aligner.run(binning_factors=[4,2,1])
 
+# Apply the measured shifts to secondary datasets
+eels_data = {'Ca': ca_tilt_series, 'Ni': ni_tilt_series, 'C': c_tilt_series}
+aligned_eels = aligner.apply_alignments(eels_data, eels_angles)
+
 # Save the Results to the given h5 file name.
 aligner.save('aligned.h5')
 ```

@@ -1,3 +1,4 @@
+import tomoalign.shifts_gpu as shifts
 import tomoalign, h5py, os
 from pathlib import Path
 import scipy.io as sio
@@ -61,6 +62,7 @@ class AlignmentWorkflow:
 
         # Results should start off as empty
         self.results = None
+        self.aligned_multimodal = {}
         
     def run(self, binning_factors=[4,2,1]):
         """
@@ -105,6 +107,38 @@ class AlignmentWorkflow:
             'shifts': self.shift,
             'parameters': self.params
         }
+
+
+    def apply_alignments(self, tiltseries, tiltangles):
+        """
+        Align simultaneously acquired tilt series based on adf alignments.
+
+        Arg:
+        ----------
+        tiltseries: Dict 
+        tiltangles: np.array
+        """
+
+        # Determine the order of angles to Match Ordering from aligned tilt series
+        angleOrder = 1 if np.all(np.diff(tiltangles) >= 0) else -1
+        tiltangles = tiltangles[::angleOrder]
+
+        # Extract chemAngles from haadfAngles for shift correction. 
+        chemInds = np.intersect1d(self.theta,tiltangles,return_indices=True)[1]
+        chemShifts = self.shift[chemInds]
+
+        print(f"Found {len(chemInds)} matching angles between datasets")
+        print(f"Applying shifts to {len(tiltseries)} tilt series...")        
+
+        # Apply the Alignments
+        linearShifts = shifts.shifts()
+        for key, tilts in tiltseries.items():
+            alignedtilts = linearShifts.imshift_generic(
+                tilts[:,:,::angleOrder], # Apply angle ordering
+                chemShifts, 5, 
+                self.params['ROI'], 1, -1)
+            self.aligned_multimodal[key] = alignedtilts
+        self.aligned_multimodal['tiltAngles'] = tiltangles
         
     def save(self, output_file='aligned.h5'):
         """

@@ -118,6 +118,8 @@ class AlignmentWorkflow:
         tiltseries: Dict 
         tiltangles: np.array
         """
+        if self.shift is None:
+            raise ValueError("No alignment shifts available. Run alignment first.")
 
         # Determine the order of angles to Match Ordering from aligned tilt series
         angleOrder = 1 if np.all(np.diff(tiltangles) >= 0) else -1
@@ -146,17 +148,12 @@ class AlignmentWorkflow:
         
         Parameters:
         -----------
-        results : dict, optional
-            Results dictionary from run_alignment(). If None, uses internal state.
+        output_file : str
+            Output filename for saving results
         """
-        # Check to see if alignments were ran
+        # Check to see if alignments were run
         if self.results is None:
-            if self.tomo_align is None or self.shift is None:
-                raise ValueError("No results to save. Run alignment first.")
-        else:
-            aligned_proj = self.results['aligned_sinogram']
-            shifts = self.results['shifts']
-            params = self.results['parameters']
+            raise ValueError("No results to save. Run alignment first.")
 
         # Determine file mode
         if os.path.isfile(output_file):
@@ -169,15 +166,25 @@ class AlignmentWorkflow:
         with h5py.File(output_file, save_h5flag) as f2:
             # Save parameters as attributes
             param_group = f2.create_group('params')
-            for key, item in params.items():
+            for key, item in self.results['parameters'].items():
                 try:
                     param_group.attrs[key] = item
                 except (TypeError, ValueError):
                     # Handle non-serializable parameters
                     param_group.attrs[key] = str(item)
                     
-            # Save datasets
-            f2.create_dataset('aligned_proj', data=aligned_proj)
-            f2.create_dataset('aligned_shifts', data=shifts)
-            
+            # Save main datasets
+            f2.create_dataset('tiltSeries', data=self.results['aligned_sinogram'])
+            f2.create_dataset('tiltAngles', data=self.theta)
+            f2.create_dataset('aligned_shifts', data=self.results['shifts'])
+
+            # Save multimodal data with type checking (MOVED INSIDE!)
+            if len(self.aligned_multimodal) > 0:
+                print("Saving multimodal data...")
+                multimodal_group = f2.create_group('multimodal')  # ← Now uses f2!
+                for key, item in self.aligned_multimodal.items():
+                    if isinstance(item, np.ndarray):
+                        multimodal_group.create_dataset(key, data=item)
+                        print(f"  Saved {key}")
+
         print(f'Data saved to {output_file}')

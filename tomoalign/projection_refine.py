@@ -1,7 +1,7 @@
-from tomofusion.gpu.utils.pytvlib import initialize_algorithm, run
 from tomoalign import refinements_gpu, refinements_cpu
-from tomofusion.gpu.utils import tomoengine
+from tomofusion.gpu.reconstructor import TomoGPU
 from tomoalign.shifts_gpu import shifts
+from tomofusion import pytvlib
 from scipy import signal
 from tqdm import tqdm
 import numpy as np
@@ -112,10 +112,9 @@ class ProjectionMatcher:
 		# Determine the optimal size based on downsampled sinogram
 		b = np.zeros([Nlayers, width_sinogram*Nangles])
 		sinogram_model = np.zeros([Nlayers, width_sinogram, Nangles])
-
-		tomo = tomoengine(Nlayers,width_sinogram, np.deg2rad(self.angles))
-		initialize_algorithm(tomo, params['alg'], params['initAlg'])
-		tomo.restart_recon()
+		tomoengine = TomoGPU(self.angles, self.sinogram)
+		pytvlib.initialize_algorithm(tomoengine.tomo, params['alg'], params['initAlg'])
+		tomoengine.tomo.restart_recon()
 
 		# geometry parameters structure 
 		geom = {'tilt_angle':0, 'skewness_angle':0}
@@ -144,16 +143,15 @@ class ProjectionMatcher:
 			#step 2: tomo recon (using ASTRA)    
 			for s in range(Nlayers):
 				b[s,:] = sinogram_shifted[s,:,:].transpose().ravel()
-			tomo.set_tilt_series(b)
-			run(tomo, params['alg'])
+			tomoengine.tomo.set_tilt_series(b)
+			pytvlib.run(tomoengine.tomo, params['alg'])
 
 			#optional step: regularization
-			if params['use_TV']: tomo.tv_gd(20, 0.1)
+			if params['use_TV']: tomoengine.tomo.tv_gd(20, 0.1)
 
 			#step 3: get reprojections from current tomogram (using ASTRA) (Line 455)
-			tomo.forward_projection()
-
-			reproj = tomo.get_model_projections()
+			tomoengine.tomo.forward_projection()
+			reproj = tomoengine.tomo.get_model_projections()
 			for s in range(Nangles):
 				sinogram_model[:,:,s] = reproj[:,s*width_sinogram:(s+1)*width_sinogram]
 
@@ -198,7 +196,7 @@ class ProjectionMatcher:
 
 			# # Plot results (Line 572)
 			if params['plot_results'] and (ii % params['plot_results_every'] == 0):
-				recSlice = tomo.get_recon(int(Nlayers//2))
+				recSlice = tomoengine.tomo.get_recon(int(Nlayers//2))
 				sinoSlice = sinogram_shifted[int(Nlayers//2),]
 				self.viz.plot_alignment(recSlice, sinoSlice, err, shift_upd, shift_total, self.angles, params, ii)
 				self.viz.removeImageItems()
